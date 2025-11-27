@@ -16,7 +16,7 @@ try:
 except: pass
 
 st.set_page_config(
-    page_title="XHS Note AI v34.1",
+    page_title="XHS Note AI v35.0",
     page_icon="🔴",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -116,7 +116,7 @@ if 'input_topic' not in st.session_state: st.session_state.input_topic = ''
 if 'input_pain' not in st.session_state: st.session_state.input_pain = ''
 if 'input_features' not in st.session_state: st.session_state.input_features = ''
 if 'ref_content_buffer' not in st.session_state: st.session_state.ref_content_buffer = ''
-if 'input_soft_ad' not in st.session_state: st.session_state.input_soft_ad = '' # 🔥 新增：软广植入字段
+if 'input_soft_ad' not in st.session_state: st.session_state.input_soft_ad = ''
 
 # 文档相关
 if 'uploaded_doc_content' not in st.session_state: st.session_state.uploaded_doc_content = '' 
@@ -226,10 +226,10 @@ def fetch_url_content(url):
 # --- 5. 侧边栏 ---
 with st.sidebar:
     st.title("🔴 XHS Note AI")
-    st.caption("v34.1 软广植入版")
+    st.caption("v35.0 深度扩写·去模板版")
     
     with st.expander("📖 新手操作指南", expanded=False):
-        st.markdown("1. **选题**：用Tab1找灵感\n2. **创作**：用Tab2生成文案\n3. **文档**：种草模式可传PDF/TXT\n4. **运营**：看右侧封面与评论")
+        st.markdown("1. 选模式\n2. 填内容\n3. 传文档\n4. 看结果")
     
     api_key = st.text_input("🔑 输入 Key", type="password")
     
@@ -257,7 +257,8 @@ with st.sidebar:
     selected_style_name = st.selectbox("选择风格", list(style_map.keys()))
     st.info(style_map[selected_style_name]['desc'])
 
-    word_count = st.slider("📏 预估篇幅", 100, 1000, 400, 100)
+    # 🔥 优化：更直观的字数滑块
+    word_count = st.slider("📏 篇幅控制 (字数)", 100, 1500, 400, 100, help="拉大字数会触发'深度扩写'模式，内容更丰富")
 
     st.divider()
     with st.expander("🚫 私有词库", expanded=False):
@@ -265,6 +266,7 @@ with st.sidebar:
         st.text_area("✅ 必用词", placeholder="绝绝子 闭眼冲", key="required_words")
 
 # --- 6. 核心生成逻辑 ---
+# 🔥 修复：增加 soft_ad 参数，修复函数定义
 def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_content, selected_points, soft_ad, vibe, length, status, vocab_dict, ref_template=None):
     client = get_client()
     if not client: 
@@ -272,49 +274,64 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
         return
     
     vocab_instruction = ""
-    if vocab_dict['banned']: vocab_instruction += f"\n- 禁止使用：{vocab_dict['banned']}"
-    if vocab_dict['required']: vocab_instruction += f"\n- 必须使用：{vocab_dict['required']}"
+    if vocab_dict['banned']: vocab_instruction += f"\n- 🚫 绝对禁止使用词汇：{vocab_dict['banned']}"
+    if vocab_dict['required']: vocab_instruction += f"\n- ✅ 必须包含词汇：{vocab_dict['required']}"
 
     if mode == "write":
-        base_prompt = f"你是一个小红书英语教育博主。人设：{vibe}。字数：{length}。任务：写一篇关于【{topic}】的笔记。"
+        
+        # 🔥 核心升级 1：根据字数动态调整指令，强制扩写
+        if length >= 800:
+            len_instruction = f"""
+            【🚨 深度长文模式 (Target: {length}+ words)】
+            1. **禁止简略**：每一个观点都必须展开讲！不要只列大纲。
+            2. **增加细节**：必须包含具体的使用场景、时间线、心理活动描写。
+            3. **举例子**：遇到干货，必须举一个具体的例子来佐证。
+            4. **结构**：采用“引入->扎心痛点->详细方法论(分步骤)->真实案例->总结升华”的完整结构。
+            """
+        elif length <= 300:
+            len_instruction = f"【⚡️ 短平快模式 (Target: {length} words)】言简意赅，只讲重点，不要废话。"
+        else:
+            len_instruction = f"【📝 标准篇幅 (Target: {length} words)】内容充实，逻辑清晰。"
+
+        # 🔥 核心升级 2：反八股文结构
+        structure_instruction = """
+        【🚨 结构要求 - 拒绝AI味】：
+        1. **禁止死板格式**：不要总是用“标题-列表-标签”这种死板结构。
+        2. **自然语流**：像真人聊天一样，段落长短结合，允许大段的感悟描写。
+        3. **情绪穿插**：不要把情绪只放在开头，要渗透在每一段文字里。
+        """
+
+        base_prompt = f"""
+        你是一个小红书英语教育博主。人设：{vibe}。
+        {len_instruction}
+        {structure_instruction}
+        任务：写一篇关于【{topic}】的笔记。
+        """
         
         if "正在备考" in status: status_instruction = "【视角：备考中】体现发现感，禁止说已上岸。"
         else: status_instruction = "【视角：已上岸】体现权威感，展示高分结果。"
 
-        # 文档提示
         doc_hint = ""
         if selected_points: doc_hint = f"\n必须包含卖点：{','.join(selected_points)}"
         elif doc_content: doc_hint = f"\n参考文档：{doc_content[:500]}"
 
+        # 模式逻辑
         if "种草" in note_type:
             if seeding_strategy == "⚖️ 竞品测评/拉踩":
-                type_instruction = f"【模式：竞品测评】红黑榜对比。分析[{field1}]缺点，引出[{topic}]优势。{doc_hint}"
+                type_instruction = f"【模式：竞品测评】分析[{field1}]缺点，引出[{topic}]优势。{doc_hint}"
             else:
                 type_instruction = f"【模式：单品体验】痛点[{field1}] -> 体验变化[{field2}] -> 相见恨晚。{doc_hint}"
         elif "教程" in note_type:
-            type_instruction = f"【模式：硬核教程】针对[{field1}]人群，分步骤讲解[{field2}]。干货说明书风格，调用知识库。{doc_hint}"
+            type_instruction = f"【模式：硬核教程】针对[{field1}]，分步骤讲解[{field2}]。干货说明书风格。{doc_hint}"
         else:
-            # 🔥 软广逻辑插入点
-            soft_ad_instruction = ""
-            if soft_ad:
-                soft_ad_instruction = f"""
-                【⚠️ 软广植入任务】：
-                这篇笔记主要是讲经验，但你需要巧妙地植入工具[{soft_ad}]。
-                要求：不要硬推！不要把产品做成主角！
-                要在讲方法的途中，顺带提一句“我当时用的是{soft_ad}，还挺顺手的”。
-                """
-            
-            type_instruction = f"""
-            【模式：纯经验分享】
-            1. 背景[{field1}] -> 方法[{field2}] -> 真诚复盘。
-            2. 核心是讲故事和干货，不是卖货。
-            {soft_ad_instruction}
-            """
+            # 软广植入逻辑
+            ad_insert = f"在分享中自然顺带提一句“{soft_ad}”很好用，不要硬推。" if soft_ad else ""
+            type_instruction = f"【模式：经验分享】背景[{field1}] -> 方法[{field2}] -> 真诚复盘。{ad_insert}"
 
         tone_instruction = "禁止流行语，语气平实。" if "朴实" in vibe else "多用'亲测/建议收藏'，有网感。"
         ref_p = f"\n参考《{ref_template['name']}》的叙事结构。" if ref_template else ""
 
-        base_prompt += f"{status_instruction} {type_instruction} {ref_p}\n【要求】：分段(<3行)，多用空行。{tone_instruction} {vocab_instruction}\n输出格式：### [标题]\n[正文]\n#标签"
+        base_prompt += f"{status_instruction} {type_instruction} {ref_p}\n{vocab_instruction}\n输出格式：### [标题]\n[正文]\n#标签"
         sys_p = base_prompt; user_p = f"主题：{topic}"
     else:
         sys_p = f"仿写大师。{vocab_instruction}"; user_p = f"参考：\n{field1}\n\n新主题：{topic}"
@@ -331,21 +348,17 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
         score, found = check_seo(st.session_state.generated_result)
         st.session_state.seo_score = score
         
-        # 🔥 优化：评论区 5 条 & 基于内容
+        # 2. 生成评论 (JSON)
         strategy_prompt = f"""
-        基于生成的笔记：
+        基于这篇笔记：
         {note_content[:1000]}
         
-        请输出JSON：
+        输出JSON，包含5条评论(user/reply)，模拟真实用户提问、质疑、共鸣、催更、求同款。
         {{
-            "cover_main": "封面大标题(6字内)",
-            "cover_sub": "副标题(10字内)",
+            "cover_main": "封面主标(6字)",
+            "cover_sub": "副标(10字)",
             "comments": [
-                {{"user": "用户A(针对笔记细节提问)", "reply": "博主回复(补充说明)"}},
-                {{"user": "用户B(表达共鸣)", "reply": "博主回复(抱抱)"}},
-                {{"user": "用户C(质疑/纠错)", "reply": "博主回复(解释)"}},
-                {{"user": "用户D(询问文中工具)", "reply": "博主回复(如实告知)"}},
-                {{"user": "用户E(催更/夸奖)", "reply": "博主回复(比心)"}}
+                {{"user": "...", "reply": "..."}}, ...
             ]
         }}
         """
@@ -356,10 +369,8 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
         try:
             data = json.loads(resp2.choices[0].message.content)
             st.session_state.cover_design = {"main": data.get("cover_main","标题"), "sub": data.get("cover_sub","副标题")}
-            # 🔥 截取前 5 条
-            st.session_state.comments_data = data.get("comments", [])[:5]
+            st.session_state.comments_data = data.get("comments", [])
         except:
-            st.session_state.cover_design = {"main": topic[:6], "sub": "点击查看"}
             st.session_state.comments_data = [{"user":"求分享","reply":"已私信"}]
         
         save_to_history(topic)
@@ -367,21 +378,17 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
     except Exception as e: st.error(f"Error: {e}")
 
 # ... (Brainstorm, Analyze, Refine) ...
-# 🔥 修复：使用正则提取选题，防止乱码
 def brainstorm_topics(niche, angle):
     client = get_client()
     if not client: return
     sys_p = f"选题策划。当前{datetime.datetime.now().month}月。"
     angle_p = "结合热点" if "热点" in angle else "直击痛点"
-    user_p = f"领域：{niche}。切角：{angle_p}。5个爆款标题。不要编号。"
+    user_p = f"领域：{niche}。切角：{angle_p}。5个爆款标题。"
     try:
         resp = client.chat.completions.create(
             model="deepseek-chat", messages=[{"role": "system", "content": sys_p}, {"role": "user", "content": user_p}], temperature=1.4
         )
-        raw_text = resp.choices[0].message.content
-        # 正则提取：匹配所有不包含特殊符号的标题行
-        ideas = re.findall(r'^[\d\-\.\s]*([^\n]+)', raw_text, re.MULTILINE)
-        st.session_state.topic_ideas = ideas[:5]
+        st.session_state.topic_ideas = [l.strip().lstrip("12345. -") for l in resp.choices[0].message.content.split('\n') if l.strip()][:5]
     except: pass
 
 def analyze_text(text):
@@ -459,6 +466,7 @@ with col_left:
             
             topic = st.text_input("📌 笔记主题", value=st.session_state.input_topic, placeholder=ph_topic)
             
+            # 文档上传
             doc_content = ""
             selected_points = []
             if note_type in ["种草/安利", "科普/教程"]:
@@ -491,18 +499,20 @@ with col_left:
                     label2, holder2 = "💡 核心方法", "例：影子跟读"
                 field2 = st.text_input(label2, value=st.session_state.input_features, placeholder=holder2)
             
-            # 🔥 新增：软广植入框 (仅在经验模式下显示)
+            # 🔥 软广植入
             soft_ad = ""
             if note_type == "纯经验分享":
-                soft_ad = st.text_input("📦 软广植入 (可选)", value=st.session_state.input_soft_ad, placeholder="例：文中顺带提一下扇贝单词，不要硬推")
+                soft_ad = st.text_input("📦 软广植入 (可选)", value=st.session_state.input_soft_ad, placeholder="例：文中顺带提一下扇贝单词")
 
             if st.button("✨ 生成笔记", type="primary", use_container_width=True):
                 if not topic: st.warning("请输入主题")
                 else:
                     with st.spinner("AI 正在组织语言..."):
                         vocab = {"banned": st.session_state.banned_words, "required": st.session_state.required_words}
+                        # 🔥 修复：传入 soft_ad 参数
                         generate_all("write", note_type, seeding_strategy, topic, field1, field2, doc_content, selected_points, soft_ad, selected_style_name, word_count, user_status, vocab, st.session_state.active_template)
 
+    # 逻辑库/仿写/拆解 (省略重复部分，保持功能)
     with tab3:
         with st.expander("📖 备考/上岸", expanded=True):
             cols = st.columns(3)
