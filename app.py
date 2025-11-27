@@ -9,15 +9,18 @@ import json
 import sys
 from io import StringIO
 
-# 🔥 1. 基础配置 & 编码修复
+# 🔥 核心修复1：强制设置系统输出编码为 UTF-8
+# 这能解决 'ascii' codec can't encode ... 报错，确保按钮点击后不崩
 try:
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
-except: pass
+except:
+    pass
 
+# --- 1. 页面配置 ---
 st.set_page_config(
-    page_title="XHS Note AI v33.0",
-    page_icon="🔴",
+    page_title="英语内容工场 v33.1",
+    page_icon="🎓",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -28,111 +31,55 @@ st.set_page_config(
 MY_SECRET_KEY = "在这里粘贴你的DeepSeekKey"
 # ==========================================
 
-# --- 2. CSS 样式 (v31.1的功能样式 + v32.0的颜值样式) ---
+# --- 2. CSS 样式 (保留 v32/v33 的高颜值) ---
 st.markdown("""
 <style>
-    /* 全局美化 */
-    .stApp {
-        background-color: #f8f9fa;
-        font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
-    }
+    .stApp {font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; background-color: #f8f9fa;}
     #MainMenu, footer, header {visibility: hidden;}
 
-    /* --- 🔴 小红书风格组件 --- */
-    
-    /* 渐变红按钮 */
+    /* 🔴 按钮美化 */
     .stButton button {
         background: linear-gradient(90deg, #ff2442 0%, #ff5c73 100%);
-        color: white;
-        border: none;
-        border-radius: 20px;
-        padding: 10px 20px;
-        font-weight: 600;
-        transition: all 0.3s;
+        color: white; border: none; border-radius: 20px;
+        padding: 10px 24px; font-weight: 600; transition: all 0.3s;
         box-shadow: 0 4px 10px rgba(255, 36, 66, 0.2);
     }
     .stButton button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 15px rgba(255, 36, 66, 0.3);
-        color: white !important;
-    }
-    
-    /* 输入框美化 */
-    .stTextInput input, .stTextArea textarea {
-        border-radius: 10px;
-        border: 1px solid #eee;
-    }
-    .stTextInput input:focus, .stTextArea textarea:focus {
-        border-color: #ff2442;
-        box-shadow: 0 0 0 1px #ff2442;
+        transform: translateY(-2px); box-shadow: 0 6px 15px rgba(255, 36, 66, 0.3); color: white !important;
     }
 
-    /* --- 📱 高保真手机预览 (v32.0移植) --- */
+    /* 📱 仿真手机预览 */
     .iphone-mockup {
-        width: 340px;
-        height: 700px;
-        background-color: white;
-        border-radius: 40px;
-        border: 10px solid #1f1f1f;
-        margin: 0 auto;
-        position: relative;
-        overflow: hidden;
-        box-shadow: 0 20px 60px rgba(0,0,0,0.15);
-        font-family: sans-serif;
+        width: 340px; height: 700px; background-color: white;
+        border-radius: 40px; border: 10px solid #1f1f1f;
+        margin: 0 auto; position: relative; overflow: hidden;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.15); font-family: sans-serif;
     }
-    
-    /* 顶部状态栏 */
-    .status-bar {
-        height: 40px; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; 
-        font-size: 12px; color: #fff; font-weight: 600; z-index: 20; position: absolute; top:0; width:100%;
-        text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    .notch {
+        position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+        width: 140px; height: 30px; background-color: #1a1a1a;
+        border-bottom-left-radius: 18px; border-bottom-right-radius: 18px; z-index: 100;
     }
-    
-    /* 顶部导航 (返回/头像/关注) */
-    .nav-bar {
-        height: 44px; margin-top: 40px; display: flex; justify-content: space-between; align-items: center; padding: 0 15px;
-        color: #fff; z-index: 20; position: absolute; top:0; width:100%;
-        text-shadow: 0 1px 2px rgba(0,0,0,0.3);
-    }
-    .user-profile { display: flex; align-items: center; gap: 8px; }
-    .avatar { width: 30px; height: 30px; border-radius: 50%; border: 1px solid #fff; }
-    .username { font-size: 13px; font-weight: 600; color: #fff; }
-    .follow-btn { 
-        background: rgba(255,36,66,0.9); color: white; border-radius: 12px; 
-        padding: 4px 12px; font-size: 11px; font-weight: 600; border:none;
-    }
-
-    /* 滚动内容区 */
     .screen-content {
         height: 100%; overflow-y: auto; scrollbar-width: none;
         padding-bottom: 50px; background-color: #fff;
     }
     .screen-content::-webkit-scrollbar { display: none; }
 
-    /* 封面图区域 */
-    .cover-wrapper {
-        width: 100%; height: 450px; position: relative;
-    }
-    .cover-img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .img-indicator {
-        position: absolute; top: 15px; right: 15px; background: rgba(0,0,0,0.5); color: white;
-        padding: 2px 8px; border-radius: 10px; font-size: 10px; margin-top: 40px;
-    }
-    
-    /* 封面文字叠加 */
+    /* 封面与文字 */
+    .cover-container { width: 100%; aspect-ratio: 3 / 4; position: relative; border-bottom: 1px solid #f0f0f0; }
+    .cover-img { width: 100%; height: 100%; object-fit: cover; display: block; filter: brightness(0.9); }
     .cover-overlay {
-        position: absolute; bottom: 20px; left: 15px; right: 15px;
-        color: white; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); pointer-events: none;
+        position: absolute; bottom: 20px; left: 15px; right: 15px; pointer-events: none;
+        color: white; text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
     }
-    .cover-main { font-size: 24px; font-weight: 900; line-height: 1.2; margin-bottom: 6px; color: #ffeb3b; font-family: Impact, sans-serif;}
-    .cover-sub { font-size: 14px; background: rgba(0,0,0,0.6); padding: 3px 8px; border-radius: 4px; display: inline-block;}
+    .cover-main-title { font-size: 24px; font-weight: 900; line-height: 1.2; margin-bottom: 5px; color: #ffeb3b; }
+    .cover-sub-title { font-size: 14px; background-color: rgba(0,0,0,0.6); padding: 2px 8px; border-radius: 4px; display: inline-block; }
 
-    /* 正文区域 */
-    .note-body { padding: 15px 18px 20px 18px; color: #333; line-height: 1.6; font-size: 15px; white-space: pre-wrap; }
-    .note-title { font-size: 18px; font-weight: 700; margin-bottom: 10px; color: #000; line-height: 1.4;}
-    .date-loc { font-size: 12px; color: #999; margin: 10px 18px; display: flex; justify-content: space-between;}
-
-    /* 底部互动栏 */
+    /* 正文样式 */
+    .note-content { padding: 15px 18px 20px 18px; color: #333; line-height: 1.6; font-size: 15px; white-space: pre-wrap; word-wrap: break-word; }
+    
+    /* 互动栏 */
     .interaction-bar {
         position: absolute; bottom: 0; width: 100%; height: 50px;
         border-top: 1px solid #eee; background: white; z-index: 30;
@@ -141,23 +88,28 @@ st.markdown("""
     .comment-input { background: #f5f5f5; color: #999; padding: 8px 15px; border-radius: 18px; font-size: 12px; width: 140px; }
     .icons { display: flex; gap: 15px; font-size: 18px; color: #333; }
 
-    /* --- 功能组件样式 (SEO/评论/状态栏) --- */
+    /* 功能卡片样式 */
     .seo-box { background: #ecfdf5; border: 1px solid #10b981; border-radius: 12px; padding: 12px; margin-top: 15px; font-size: 14px; color: #064e3b; }
-    .comment-card { background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 10px; margin-top: 8px; font-size: 13px; box-shadow: 0 2px 5px rgba(0,0,0,0.02);}
-    .status-box-ref { background: #fffbeb; border: 1px solid #f59e0b; color: #b45309; padding: 8px 12px; border-radius: 8px; margin-bottom: 15px; font-size: 13px; display: flex; justify-content: space-between; align-items: center;}
-    .status-box-free { background: #eff6ff; border: 1px solid #3b82f6; color: #1d4ed8; padding: 8px 12px; border-radius: 8px; margin-bottom: 15px; font-size: 13px;}
+    .comment-card { background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 10px; margin-top: 8px; font-size: 13px; }
     .magic-box { background: #fff1f2; border: 1px solid #fda4af; padding: 10px; border-radius: 12px; margin-top: 15px; }
+    .status-box-ref { background: #fffbeb; border: 1px solid #f59e0b; color: #b45309; padding: 8px 12px; border-radius: 8px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;}
+    
+    /* 选题卡片 */
+    .idea-card { display:block; width:100%; text-align:left; border:1px solid #eee; padding:10px; border-radius:8px; margin-bottom:8px; background:white; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. 状态管理 (保留所有变量) ---
+# --- 3. 状态管理 (恢复 v31.1 所有状态) ---
 if 'input_topic' not in st.session_state: st.session_state.input_topic = ''
 if 'input_pain' not in st.session_state: st.session_state.input_pain = ''
 if 'input_features' not in st.session_state: st.session_state.input_features = ''
 if 'ref_content_buffer' not in st.session_state: st.session_state.ref_content_buffer = ''
-if 'uploaded_doc_content' not in st.session_state: st.session_state.uploaded_doc_content = ''
+
+# 文档相关
+if 'uploaded_doc_content' not in st.session_state: st.session_state.uploaded_doc_content = '' 
 if 'extracted_points' not in st.session_state: st.session_state.extracted_points = []
 
+# 结果相关
 if 'generated_result' not in st.session_state: st.session_state.generated_result = ''
 if 'growth_advice' not in st.session_state: st.session_state.growth_advice = ''
 if 'cover_design' not in st.session_state: st.session_state.cover_design = {"main": "", "sub": ""}
@@ -167,10 +119,14 @@ if 'analysis_report' not in st.session_state: st.session_state.analysis_report =
 
 if 'cover_url' not in st.session_state: st.session_state.cover_url = "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600&q=80"
 if 'active_template' not in st.session_state: st.session_state.active_template = None 
-if 'topic_ideas' not in st.session_state: st.session_state.topic_ideas = []
+if 'topic_ideas' not in st.session_state: st.session_state.topic_ideas = [] # 选题雷达数据
 if 'history_log' not in st.session_state: st.session_state.history_log = []
 
-# --- 4. 辅助函数 (完整保留) ---
+# --- 4. 辅助函数 ---
+def get_client():
+    if not MY_SECRET_KEY or "sk-" not in MY_SECRET_KEY: return None
+    return OpenAI(api_key=MY_SECRET_KEY, base_url="https://api.deepseek.com")
+
 def get_random_cover():
     urls = [
         "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600&q=80",
@@ -184,7 +140,6 @@ def get_random_cover():
 
 def markdown_to_html_simple(text):
     if not text: return ""
-    # 简单处理标题和换行
     html = text.replace("\n", "<br>")
     html = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', html)
     html = re.sub(r'^###\s+(.*)', r'<div style="font-weight:bold;font-size:16px;margin:10px 0;">\1</div>', html, flags=re.MULTILINE)
@@ -197,13 +152,6 @@ def set_template_as_reference(name, topic, pain, features):
 def clear_reference():
     st.session_state.active_template = None
     st.rerun()
-
-def fetch_url_content(url):
-    try:
-        api_url = f"https://r.jina.ai/{url}"
-        response = requests.get(api_url, timeout=10)
-        return response.text[:2000] if response.status_code == 200 else None
-    except: return None
 
 def use_idea(idea_text):
     st.session_state.input_topic = idea_text
@@ -242,32 +190,86 @@ def restore_history(idx):
     st.session_state.seo_score = score
     st.toast("✅ 已恢复")
 
+# 🔥 核心修复2：文档读取使用 ignore 模式，防止 ASCII 报错
 def extract_points_from_doc(doc_text):
     client = get_client()
     if not client: return []
     try:
         resp = client.chat.completions.create(
             model="deepseek-chat",
-            messages=[{"role": "system", "content": "提取产品卖点。列表输出。"}, {"role": "user", "content": f"文档：{doc_text[:1000]}"}],
+            messages=[{"role": "system", "content": "提取产品卖点，只输出列表，不要编号。"}, {"role": "user", "content": f"文档：{doc_text[:1000]}"}],
             temperature=1.0
         )
         points = [l.strip("- ").strip() for l in resp.choices[0].message.content.split('\n') if l.strip()]
         return points[:10]
-    except: return ["提取失败"]
+    except: return ["提取失败，请重试"]
+
+def fetch_url_content(url):
+    try:
+        api_url = f"https://r.jina.ai/{url}"
+        response = requests.get(api_url, timeout=10)
+        return response.text[:2000] if response.status_code == 200 else None
+    except: return None
+
+# 🔥 恢复功能：选题雷达 (Brainstorm)
+def brainstorm_topics(niche, angle):
+    client = get_client()
+    if not client: return
+    
+    sys_p = f"你是一个小红书爆款选题策划。当前月份：{datetime.datetime.now().month}月。"
+    
+    if "热点" in angle: angle_p = "结合当季考试/假期热点。"
+    elif "蓝海" in angle: angle_p = "寻找竞争小但有需求的细分话题。"
+    else: angle_p = "直击用户最焦虑的痛点。"
+    
+    user_p = f"""
+    领域：{niche}
+    切角：{angle_p}
+    任务：策划 5 个极具吸引力的标题。
+    要求：每行一个标题，不要编号，不要引号，不要其他废话。
+    """
+    try:
+        resp = client.chat.completions.create(
+            model="deepseek-chat", messages=[{"role": "system", "content": sys_p}, {"role": "user", "content": user_p}], temperature=1.4
+        )
+        # 清洗数据
+        raw_text = resp.choices[0].message.content
+        ideas = [l.strip().lstrip("12345. -") for l in raw_text.split('\n') if l.strip()]
+        st.session_state.topic_ideas = ideas[:5]
+    except: st.error("选题生成失败，请检查Key")
+
+def analyze_text(text):
+    client = get_client()
+    if not client: return
+    try:
+        resp = client.chat.completions.create(
+            model="deepseek-chat", messages=[{"role": "system", "content": "拆解爆款逻辑。"}, {"role": "user", "content": f"分析：\n{text}"}], temperature=1.0
+        )
+        st.session_state.analysis_report = resp.choices[0].message.content
+    except: pass
+
+def refine_text(instruction):
+    client = get_client()
+    if not client or not st.session_state.generated_result: return
+    try:
+        resp = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[{"role": "system", "content": "文案编辑。保留Markdown。"}, {"role": "user", "content": f"原代码:\n{st.session_state.generated_result}\n修改指令:\n{instruction}"}],
+            temperature=1.1
+        )
+        st.session_state.generated_result = resp.choices[0].message.content
+        st.rerun()
+    except: pass
 
 # --- 5. 侧边栏 ---
 with st.sidebar:
     st.title("🔴 XHS Note AI")
-    st.caption("v33.0 全能颜控版")
+    st.caption("v33.1 稳定修复版")
     
     with st.expander("📖 新手操作指南", expanded=False):
-        st.markdown("1. 选模式：种草/经验/教程\n2. 填内容：输入或选模板\n3. 传文档：种草/教程可辅助\n4. 看结果：右侧预览")
+        st.markdown("1. **选题**：用Tab1找灵感\n2. **创作**：用Tab2生成文案\n3. **文档**：种草模式可传PDF/TXT\n4. **运营**：看右侧封面与评论")
     
-    if len(MY_SECRET_KEY) > 10:
-        api_key = MY_SECRET_KEY
-        st.success("✅ Key 已内置")
-    else:
-        api_key = st.text_input("🔑 输入 Key", type="password")
+    api_key = st.text_input("🔑 输入 Key", type="password")
     
     if st.session_state.history_log:
         st.divider()
@@ -300,14 +302,12 @@ with st.sidebar:
         banned_words = st.text_area("🚫 禁用词", placeholder="首先 其次 总之")
         required_words = st.text_area("✅ 必用词", placeholder="绝绝子 闭眼冲")
 
-# --- 6. AI 逻辑 ---
-def get_client():
-    if not api_key: return None
-    return OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-
+# --- 6. 核心生成 ---
 def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_content, selected_points, vibe, length, status, vocab_dict, ref_template=None):
     client = get_client()
-    if not client: return
+    if not client: 
+        st.error("请先输入 API Key")
+        return
     
     vocab_instruction = ""
     if vocab_dict['banned']: vocab_instruction += f"\n- 禁止使用：{vocab_dict['banned']}"
@@ -315,10 +315,13 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
 
     if mode == "write":
         base_prompt = f"""
-        你是一个小红书英语教育博主。人设：{vibe}。字数：{length}。任务：写关于【{topic}】的笔记。
+        你是一个小红书英语教育博主。人设：{vibe}。
+        【字数控制】：{length}字左右。
+        任务：写一篇关于【{topic}】的笔记。
         """
-        if "正在备考" in status: status_p = "【视角：备考中】发现感，救命感，不装大师。"
-        else: status_p = "【视角：已上岸】权威感，结果导向。"
+        
+        if "正在备考" in status: status_instruction = "【视角：备考中】体现发现感，禁止说已上岸。"
+        else: status_instruction = "【视角：已上岸】体现权威感，展示高分结果。"
 
         # 模式逻辑
         doc_hint = ""
@@ -387,57 +390,28 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
         
     except Exception as e: st.error(f"Error: {e}")
 
-# ... (Brainstorm, Analyze, Refine) ...
-def brainstorm_topics(niche, angle):
-    client = get_client()
-    if not client: return
-    sys_p = f"选题策划。当前{datetime.datetime.now().month}月。"
-    angle_p = "结合热点" if "热点" in angle else "直击痛点"
-    user_p = f"领域：{niche}。切角：{angle_p}。5个爆款标题。"
-    try:
-        resp = client.chat.completions.create(
-            model="deepseek-chat", messages=[{"role": "system", "content": sys_p}, {"role": "user", "content": user_p}], temperature=1.4
-        )
-        st.session_state.topic_ideas = [l.strip() for l in resp.choices[0].message.content.split('\n') if l.strip()][:5]
-    except: pass
-
-def analyze_text(text):
-    client = get_client()
-    if not client: return
-    try:
-        resp = client.chat.completions.create(
-            model="deepseek-chat", messages=[{"role": "system", "content": "拆解爆款。"}, {"role": "user", "content": f"分析：\n{text}"}], temperature=1.0
-        )
-        st.session_state.analysis_report = resp.choices[0].message.content
-    except: pass
-
-def refine_text(instruction):
-    client = get_client()
-    if not client or not st.session_state.generated_result: return
-    try:
-        resp = client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[{"role": "system", "content": "文案编辑。保留Markdown。"}, {"role": "user", "content": f"原代码:\n{st.session_state.generated_result}\n修改指令:\n{instruction}"}],
-            temperature=1.1
-        )
-        st.session_state.generated_result = resp.choices[0].message.content
-        st.rerun()
-    except: pass
-
-# --- 7. 主界面布局 (左创作，右预览) ---
+# --- 7. 主界面布局 ---
 col_left, col_right = st.columns([1.1, 1], gap="large")
 
 # === 👈 左侧：创作中心 ===
 with col_left:
-    st.markdown("### ✍️ 创作中心")
+    st.subheader("✍️ 创作中心")
     
+    # 🔥 找回了 Tab 1 选题雷达
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["💡 选题", "✨ 创作", "📚 逻辑", "🦜 仿写", "🔍 拆解"])
     
     with tab1:
+        st.markdown("##### 🧠 AI 策划室")
         c1, c2 = st.columns([2, 1])
         with c1: niche_input = st.text_input("输入领域", placeholder="例：雅思口语")
-        with c2: angle_input = st.selectbox("切入视角", ["🔥 蹭热点", "😭 极致痛点", "💡 冷门蓝海"])
-        if st.button("🧠 头脑风暴", use_container_width=True): brainstorm_topics(niche_input, angle_input)
+        with c2: angle_input = st.selectbox("切入视角", ["🔥 蹭热点/时效性", "😭 极致痛点/焦虑", "💡 冷门蓝海/差异化"])
+        
+        c3, c4 = st.columns(2)
+        with c3:
+            if st.button("🧠 头脑风暴", use_container_width=True): brainstorm_topics(niche_input, angle_input)
+        with c4:
+            if st.button("🔄 换一批", use_container_width=True): brainstorm_topics(niche_input, angle_input)
+            
         if st.session_state.topic_ideas:
             for idea in st.session_state.topic_ideas:
                 if st.button(f"📌 {idea}", use_container_width=True): use_idea(idea)
@@ -451,8 +425,8 @@ with col_left:
             st.markdown(f"""<div class="status-box-free"><span>✨ <b>模式：自由创作</b></span></div>""", unsafe_allow_html=True)
 
         with st.container(border=True):
-            # 🔥 笔记模式选择 (含教程模式)
             note_type_label = st.selectbox("📝 笔记模式", ["🔴 强力种草 (带货/引流)", "🔵 纯经验分享 (复盘/晒分)", "🟡 硬核科普/教程 (干货/说明书)"])
+            
             note_type = "其他"
             if "种草" in note_type_label: note_type = "种草/安利"
             elif "教程" in note_type_label: note_type = "科普/教程"
@@ -465,12 +439,13 @@ with col_left:
             st.divider()
             topic = st.text_input("📌 笔记主题", value=st.session_state.input_topic, placeholder="例：百词斩APP怎么用")
             
-            # 🔥 文档上传 & 智能选点
+            # 文档上传
             doc_content = ""
             selected_points = []
             if note_type in ["种草/安利", "科普/教程"]:
                 uploaded_file = st.file_uploader("📂 上传产品文档 (TXT/MD)", type=['txt', 'md'])
                 if uploaded_file:
+                    # 🔥 修复：安全读取文件
                     doc_content = uploaded_file.getvalue().decode("utf-8", errors='ignore')
                     if doc_content != st.session_state.uploaded_doc_content:
                         st.session_state.uploaded_doc_content = doc_content
@@ -506,8 +481,8 @@ with col_left:
                         vocab = {"banned": banned_words, "required": required_words}
                         generate_all("write", note_type, seeding_strategy, topic, field1, field2, doc_content, selected_points, selected_style_name, word_count, user_status, vocab, st.session_state.active_template)
 
-    # 逻辑库/仿写/拆解 (省略重复代码，结构保持一致)
     with tab3:
+        # 逻辑库 (精简代码，逻辑不变)
         with st.expander("📖 备考/上岸", expanded=True):
             cols = st.columns(3)
             if cols[0].button("🚀 冲刺逆袭"): set_template_as_reference("四六级逆袭", "四六级最后30天", "单词背不完", "三色刷题法")
@@ -561,40 +536,28 @@ with col_left:
 
 # === 👉 右侧：预览 ===
 with col_right:
-    # 动态渲染数据
-    html_content = markdown_to_html_simple(st.session_state.generated_result) if st.session_state.generated_result else "<div style='text-align:center;padding-top:50%;color:#ccc;'>👋 设置参数，点击生成</div>"
+    html_content = markdown_to_html_simple(st.session_state.generated_result) if st.session_state.generated_result else "<div style='text-align:center;padding-top:50%;color:#ccc;'>👋 点击左侧生成</div>"
     c_main = st.session_state.cover_design.get("main", "")
     c_sub = st.session_state.cover_design.get("sub", "")
-    title_text = st.session_state.input_topic if st.session_state.input_topic else "爆款笔记"
-    
     st.markdown(f"""
     <div style="display:flex; justify-content:center; align-items:center; height:100%;">
         <div class="iphone-mockup">
-            <div class="status-bar">
-                <span>19:54</span><span>5G</span>
-            </div>
+            <div class="status-bar"><span>19:54</span><span>5G</span></div>
             <div class="nav-bar">
                 <span>❮</span>
-                <div class="user-profile">
-                    <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" class="avatar">
-                    <span class="username">English_Master</span>
-                </div>
+                <div class="user-profile"><div class="avatar"></div><span class="username">XHS博主</span></div>
                 <button class="follow-btn">关注</button>
             </div>
             <div class="screen-content">
-                <div class="cover-wrapper">
+                <div class="cover-container">
                     <img src="{st.session_state.cover_url}" class="cover-img">
-                    <div class="img-indicator">1/4</div>
                     <div class="cover-overlay">
-                        <div class="cover-main">{c_main}</div>
-                        <div class="cover-sub">{c_sub}</div>
+                        <div class="cover-main-title">{c_main}</div>
+                        <div class="cover-sub-title">{c_sub}</div>
                     </div>
                 </div>
-                <div class="note-body">
-                    <div class="note-title">{title_text}</div>
-                    {html_content}
-                    <div class="date-loc">11-20 北京</div>
-                </div>
+                <div class="note-content">{html_content}</div>
+                <div class="date-loc">11-20 北京</div>
             </div>
             <div class="interaction-bar">
                 <div class="comment-input">说点什么...</div>
