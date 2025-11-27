@@ -10,7 +10,7 @@ import json
 
 # --- 1. 页面配置 ---
 st.set_page_config(
-    page_title="英语内容工场 v30.0",
+    page_title="英语内容工场 v31.0",
     page_icon="🎓",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -107,10 +107,9 @@ if 'input_pain' not in st.session_state: st.session_state.input_pain = ''
 if 'input_features' not in st.session_state: st.session_state.input_features = ''
 if 'ref_content_buffer' not in st.session_state: st.session_state.ref_content_buffer = ''
 
-# 🔥 文档与卖点提取相关状态
 if 'uploaded_doc_content' not in st.session_state: st.session_state.uploaded_doc_content = '' 
-if 'extracted_points' not in st.session_state: st.session_state.extracted_points = [] # 提取出的卖点列表
-if 'selected_doc_points' not in st.session_state: st.session_state.selected_doc_points = [] # 用户选中的卖点
+if 'extracted_points' not in st.session_state: st.session_state.extracted_points = []
+if 'selected_doc_points' not in st.session_state: st.session_state.selected_doc_points = [] 
 
 if 'generated_result' not in st.session_state: st.session_state.generated_result = ''
 if 'growth_advice' not in st.session_state: st.session_state.growth_advice = ''
@@ -218,36 +217,67 @@ def restore_history(idx):
     st.session_state.seo_score = score
     st.toast("✅ 已恢复")
 
+def extract_points_from_doc(doc_text):
+    client = get_client()
+    if not client: return []
+    sys_p = "你是一个产品经理。任务：从产品文档中提炼核心卖点。"
+    user_p = f"请阅读文档，提炼 5-8 个卖点。只输出列表。\n【文档】：{doc_text[:1500]}"
+    try:
+        resp = client.chat.completions.create(model="deepseek-chat", messages=[{"role": "system", "content": sys_p}, {"role": "user", "content": user_p}], temperature=1.0)
+        points = [line.strip().lstrip("- ").lstrip("1234567890. ") for line in resp.choices[0].message.content.split('\n') if line.strip()]
+        return points[:10]
+    except: return ["提取失败"]
+
+# --- 5. 侧边栏 ---
+with st.sidebar:
+    st.title("🎓 英语内容工场")
+    st.caption("v31.0 百科全书版")
+    
+    with st.expander("📖 新手操作指南", expanded=False):
+        st.markdown("1. 选模式：种草、经验或教程\n2. 填内容：输入或选模板\n3. 传文档：种草/教程可辅助\n4. 看结果：右侧预览")
+    
+    if len(MY_SECRET_KEY) > 10:
+        api_key = MY_SECRET_KEY
+        st.success("✅ Key 已内置")
+    else:
+        api_key = st.text_input("🔑 输入 Key", type="password")
+    
+    if st.session_state.history_log:
+        st.divider()
+        st.markdown("### 📂 历史草稿")
+        options = [f"{i+1}. {e['timestamp']} - {e['topic'][:6]}..." for i, e in enumerate(st.session_state.history_log)]
+        selected_hist = st.selectbox("选择记录", range(len(options)), format_func=lambda x: options[x])
+        if st.button("🔄 恢复此版本"): restore_history(selected_hist)
+
+    st.divider()
+    st.markdown("### 👱‍♀️ 博主身份")
+    user_status = st.radio("选择状态", ["✅ 已上岸/高分大神", "🏃‍♀️ 正在备考/小白"])
+    
+    st.divider()
+    st.markdown("### 🎭 人设风格")
+    style_map = {
+        "🎒 朴实学生党": {"desc": "无网感、不浮夸。语气平和实在。", "icon": "🎒"},
+        "🎓 雅思/考研学霸": {"desc": "权威、高分。语气冷静，常用“底层逻辑”。", "icon": "🎓"},
+        "🔥 逆袭特种兵": {"desc": "热血、鸡血。喜欢用感叹号！", "icon": "🔥"},
+        "🗣️ 纯正英音党": {"desc": "优雅、高级。强调“腔调”、“氛围感”。", "icon": "🗣️"},
+        "📝 极简笔记控": {"desc": "清爽、治愈。喜欢分点罗列。", "icon": "📝"},
+        "👯‍♀️ 留学/考研搭子": {"desc": "亲切、陪伴感。用“宝子们”。", "icon": "👯‍♀️"}
+    }
+    selected_style_name = st.selectbox("选择风格", list(style_map.keys()))
+    st.info(style_map[selected_style_name]['desc'])
+
+    word_count = st.slider("📏 预估篇幅", 100, 1000, 400, 50)
+
+    st.divider()
+    with st.expander("🚫 私有词库", expanded=False):
+        banned_words = st.text_area("🚫 禁用词", placeholder="首先 其次 总之")
+        required_words = st.text_area("✅ 必用词", placeholder="绝绝子 闭眼冲")
+
 # --- 6. AI 逻辑 ---
 def get_client():
     if not api_key: return None
     return OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
 
-# 🔥 新增：从文档提取卖点
-def extract_points_from_doc(doc_text):
-    client = get_client()
-    if not client: return []
-    
-    sys_p = "你是一个产品经理。任务：从产品文档中提炼核心卖点。"
-    user_p = f"""
-    请阅读以下文档，提炼出 5-8 个最具吸引力的产品卖点/功能亮点。
-    要求：简短精炼，每点不超过 10 个字。
-    只输出列表，不要编号，每行一个。
-    
-    【文档内容】：
-    {doc_text[:1500]}
-    """
-    try:
-        resp = client.chat.completions.create(
-            model="deepseek-chat", messages=[{"role": "system", "content": sys_p}, {"role": "user", "content": user_p}], temperature=1.0
-        )
-        # 清洗数据
-        points = [line.strip().lstrip("- ").lstrip("1234567890. ") for line in resp.choices[0].message.content.split('\n') if line.strip()]
-        return points[:10]
-    except:
-        return ["提取失败，请手动输入"]
-
-# 核心生成逻辑 (支持选定卖点)
 def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_content, selected_points, vibe, length, status, vocab_dict, ref_template=None):
     client = get_client()
     if not client: return
@@ -263,42 +293,38 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
         任务：写一篇关于【{topic}】的笔记。
         """
         
+        # 身份指令
         if "正在备考" in status:
             status_instruction = "【视角：备考中】禁止说已上岸，体现发现感和救命感。"
         else:
             status_instruction = "【视角：已上岸】展示高分结果，体现权威感。"
 
-        # 🔥 策略逻辑分支 (加入精准卖点)
-        if note_type == "种草/安利":
-            # 如果有选中的卖点，强制使用选中的点
-            if selected_points:
-                doc_hint = f"\n【⚠️ 必须涵盖的核心卖点】：{', '.join(selected_points)}\n(请将这些点自然融入文案，不要生硬罗列)"
-            else:
-                doc_hint = f"\n【📄 产品文档参考】：{doc_content[:500]}..." if doc_content else ""
-            
-            if seeding_strategy == "⚖️ 竞品测评/拉踩":
-                type_instruction = f"""
-                【模式：竞品测评】
-                1. 结构：红黑榜/对比。
-                2. 竞品分析：[{field1}]的缺点。
-                3. 我的优势：自然引出[{topic}]。{doc_hint}
-                """
-            else:
-                type_instruction = f"""
-                【模式：单品沉浸体验】
-                1. 痛点：[{field1}]。
-                2. 体验：使用前后变化。{doc_hint}
-                3. 共鸣：相见恨晚。
-                """
-        else:
-            type_instruction = f"""
-            【模式：纯经验分享】
-            1. 背景：[{field1}]。
-            2. 方法：[{field2}]。
-            3. 去功利化：真诚分享。
-            """
+        # 🔥🔥🔥 模式逻辑分支 (新增教程模式) 🔥🔥🔥
+        doc_hint = ""
+        if selected_points:
+            doc_hint = f"\n【⚠️ 必须涵盖的要点/卖点】：{', '.join(selected_points)}"
+        elif doc_content:
+            doc_hint = f"\n【📄 文档参考】：{doc_content[:800]}..."
 
-        if "朴实" in vibe: tone_instruction = "禁止流行语，语气平实像日记。"
+        if "种草" in note_type:
+            if seeding_strategy == "⚖️ 竞品测评/拉踩":
+                type_instruction = f"【模式：竞品测评】1.竞品分析[{field1}] 2.我的优势[{field2}] 3.结论避坑。{doc_hint}"
+            else:
+                type_instruction = f"【模式：单品体验】1.痛点[{field1}] 2.体验变化[{field2}] 3.相见恨晚。{doc_hint}"
+        elif "教程" in note_type:
+            # 🔥 教程模式专用指令
+            type_instruction = f"""
+            【模式：硬核科普/教程】
+            1. **适用场景**：明确指出针对人群[{field1}]。
+            2. **核心干货**：分步骤、分逻辑地讲解[{field2}]。
+            3. **知识调用**：请调用你内部的数据库，补充关于【{topic}】的专业背景知识、操作步骤或原理。
+            4. **风格**：不要煽情，不要讲故事，做一份清晰好用的“说明书”或“路线图”。{doc_hint}
+            """
+        else:
+            type_instruction = f"【模式：经验分享】1.背景[{field1}] 2.方法[{field2}] 3.真诚分享。"
+
+        # 朴实模式微调
+        if "朴实" in vibe: tone_instruction = "禁止流行语，语气平实。"
         else: tone_instruction = "多用“亲测/建议收藏”，有网感。"
         
         if ref_template:
@@ -369,7 +395,7 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
         
     except Exception as e: st.error(f"Error: {e}")
 
-# ... (Brainstorm, Analyze, Refine) ...
+# ... (Brainstorm, Analyze, Refine 保持不变) ...
 def brainstorm_topics(niche, angle):
     client = get_client()
     if not client: return
@@ -408,51 +434,6 @@ def refine_text(instruction):
         st.rerun()
     except: pass
 
-# --- 5. 侧边栏 ---
-with st.sidebar:
-    st.title("🎓 英语内容工场")
-    st.caption("v30.0 智能选点版")
-    
-    with st.expander("📖 新手操作指南", expanded=False):
-        st.markdown("1. 选模式：种草或经验\n2. 填内容：输入或选模板\n3. 传文档：上传后可勾选重点\n4. 看结果：右侧预览")
-    
-    if len(MY_SECRET_KEY) > 10:
-        api_key = MY_SECRET_KEY
-        st.success("✅ Key 已内置")
-    else:
-        api_key = st.text_input("🔑 输入 Key", type="password")
-    
-    if st.session_state.history_log:
-        st.divider()
-        st.markdown("### 📂 历史草稿")
-        options = [f"{i+1}. {e['timestamp']} - {e['topic'][:6]}..." for i, e in enumerate(st.session_state.history_log)]
-        selected_hist = st.selectbox("选择记录", range(len(options)), format_func=lambda x: options[x])
-        if st.button("🔄 恢复此版本"): restore_history(selected_hist)
-
-    st.divider()
-    st.markdown("### 👱‍♀️ 博主身份")
-    user_status = st.radio("选择状态", ["✅ 已上岸/高分大神", "🏃‍♀️ 正在备考/小白"])
-    
-    st.divider()
-    st.markdown("### 🎭 人设风格")
-    style_map = {
-        "🎒 朴实学生党": {"desc": "无网感、不浮夸。语气平和实在。", "icon": "🎒"},
-        "🎓 雅思/考研学霸": {"desc": "权威、高分。语气冷静，常用“底层逻辑”。", "icon": "🎓"},
-        "🔥 逆袭特种兵": {"desc": "热血、鸡血。喜欢用感叹号！", "icon": "🔥"},
-        "🗣️ 纯正英音党": {"desc": "优雅、高级。强调“腔调”、“氛围感”。", "icon": "🗣️"},
-        "📝 极简笔记控": {"desc": "清爽、治愈。喜欢分点罗列。", "icon": "📝"},
-        "👯‍♀️ 留学/考研搭子": {"desc": "亲切、陪伴感。用“宝子们”。", "icon": "👯‍♀️"}
-    }
-    selected_style_name = st.selectbox("选择风格", list(style_map.keys()))
-    st.info(style_map[selected_style_name]['desc'])
-
-    word_count = st.slider("📏 预估篇幅", 100, 1000, 400, 50)
-
-    st.divider()
-    with st.expander("🚫 私有词库", expanded=False):
-        banned_words = st.text_area("🚫 禁用词", placeholder="首先 其次 总之")
-        required_words = st.text_area("✅ 必用词", placeholder="绝绝子 闭眼冲")
-
 # --- 7. 主界面布局 ---
 col_left, col_right = st.columns([1.1, 1], gap="large")
 
@@ -486,57 +467,55 @@ with col_left:
             st.markdown(f"""<div class="status-box-free"><span>✨ <b>模式：自由创作</b></span></div>""", unsafe_allow_html=True)
 
         with st.container(border=True):
-            note_type_label = st.selectbox("📝 笔记模式", ["🔴 强力种草 (带货/引流)", "🔵 纯经验分享 (复盘/晒分)"])
-            note_type = "种草/安利" if "强力种草" in note_type_label else "纯经验分享"
+            # 🔥 新增：第三种模式
+            note_type_label = st.selectbox(
+                "📝 笔记模式", 
+                ["🔴 强力种草 (带货/引流)", "🔵 纯经验分享 (复盘/晒分)", "🟡 硬核科普/教程 (干货/说明书)"]
+            )
+            
+            # 简化类型判断
+            note_type = "其他"
+            if "种草" in note_type_label: note_type = "种草/安利"
+            elif "教程" in note_type_label: note_type = "科普/教程"
+            else: note_type = "纯经验分享"
             
             seeding_strategy = "默认"
             if "种草" in note_type:
                 seeding_strategy = st.radio("🛠️ 种草策略", ["❤️ 沉浸式单品体验", "⚖️ 竞品测评/拉踩"], horizontal=True)
 
             st.divider()
-            topic = st.text_input("📌 笔记主题", value=st.session_state.input_topic, placeholder="例：百词斩APP")
+            topic = st.text_input("📌 笔记主题", value=st.session_state.input_topic, placeholder="例：百词斩APP怎么用")
             
-            # 🔥 文档喂养 + 智能提取 + 多选
+            # 文档上传 (支持种草和教程模式)
             doc_content = ""
             selected_points = []
-            if "种草" in note_type:
-                uploaded_file = st.file_uploader("📂 上传产品文档 (TXT/MD)", type=['txt', 'md'])
+            if note_type in ["种草/安利", "科普/教程"]:
+                uploaded_file = st.file_uploader("📂 上传参考文档 (可选)", type=['txt', 'md'])
                 if uploaded_file:
-                    stringio = StringIO(uploaded_file.getvalue().decode("utf-8"))
-                    raw_content = stringio.read()
-                    
-                    # 如果是新文件，触发提取
-                    if raw_content != st.session_state.uploaded_doc_content:
-                        st.session_state.uploaded_doc_content = raw_content
-                        with st.spinner("🤖 正在智能分析文档卖点..."):
-                            st.session_state.extracted_points = extract_points_from_doc(raw_content)
+                    doc_content = uploaded_file.getvalue().decode("utf-8", errors='ignore')
+                    if doc_content != st.session_state.uploaded_doc_content:
+                        st.session_state.uploaded_doc_content = doc_content
+                        with st.spinner("🤖 正在提取文档要点..."):
+                            st.session_state.extracted_points = extract_points_from_doc(doc_content)
                     
                     if st.session_state.extracted_points:
-                        selected_points = st.multiselect(
-                            "✅ 请勾选要强调的卖点 (不选则默认全参考)",
-                            options=st.session_state.extracted_points,
-                            default=st.session_state.extracted_points[:3] # 默认选前3个
-                        )
-                    else:
-                        doc_content = raw_content # 提取失败则降级为全文参考
+                        selected_points = st.multiselect("✅ 勾选核心要点", options=st.session_state.extracted_points, default=st.session_state.extracted_points[:3])
 
             c1, c2 = st.columns(2)
             with c1:
                 if "种草" in note_type:
-                    if "竞品" in seeding_strategy:
-                        label1, holder1 = "🆚 竞品名单", "例：墨墨/不背"
-                    else:
-                        label1, holder1 = "🎯 用户痛点", "例：背了忘"
+                    label1, holder1 = ("🆚 竞品名单", "例：墨墨") if "竞品" in seeding_strategy else ("🎯 用户痛点", "例：背了忘")
+                elif "教程" in note_type:
+                    label1, holder1 = "👥 适用人群/场景", "例：考研党/通勤路上"
                 else:
                     label1, holder1 = "🏁 背景/现状", "例：四级420"
                 field1 = st.text_input(label1, value=st.session_state.input_pain, placeholder=holder1)
                 
             with c2:
                 if "种草" in note_type:
-                    if "竞品" in seeding_strategy:
-                        label2, holder2 = "🏆 我的优势", "例：免费"
-                    else:
-                        label2, holder2 = "✨ 核心卖点", "例：记忆曲线"
+                    label2, holder2 = ("🏆 我的优势", "例：免费") if "竞品" in seeding_strategy else ("✨ 核心卖点", "例：记忆曲线")
+                elif "教程" in note_type:
+                    label2, holder2 = "🧠 核心知识点/功能", "例：艾宾浩斯算法"
                 else:
                     label2, holder2 = "💡 核心方法", "例：影子跟读"
                 field2 = st.text_input(label2, value=st.session_state.input_features, placeholder=holder2)
@@ -548,6 +527,7 @@ with col_left:
                         vocab = {"banned": banned_words, "required": required_words}
                         generate_all("write", note_type, seeding_strategy, topic, field1, field2, doc_content, selected_points, selected_style_name, word_count, user_status, vocab, st.session_state.active_template)
 
+    # Tab 3-5 保持不变... (逻辑库/仿写/拆解)
     with tab3:
         with st.expander("📖 备考/上岸", expanded=True):
             cols = st.columns(3)
