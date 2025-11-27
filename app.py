@@ -16,7 +16,7 @@ try:
 except: pass
 
 st.set_page_config(
-    page_title="XHS Note AI v33.8",
+    page_title="XHS Note AI v34.0",
     page_icon="🔴",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -117,11 +117,9 @@ if 'input_pain' not in st.session_state: st.session_state.input_pain = ''
 if 'input_features' not in st.session_state: st.session_state.input_features = ''
 if 'ref_content_buffer' not in st.session_state: st.session_state.ref_content_buffer = ''
 
-# 文档相关
 if 'uploaded_doc_content' not in st.session_state: st.session_state.uploaded_doc_content = '' 
 if 'extracted_points' not in st.session_state: st.session_state.extracted_points = []
 
-# 结果相关
 if 'generated_result' not in st.session_state: st.session_state.generated_result = ''
 if 'cover_design' not in st.session_state: st.session_state.cover_design = {"main": "", "sub": ""}
 if 'comments_data' not in st.session_state: st.session_state.comments_data = []
@@ -133,7 +131,6 @@ if 'active_template' not in st.session_state: st.session_state.active_template =
 if 'topic_ideas' not in st.session_state: st.session_state.topic_ideas = [] 
 if 'history_log' not in st.session_state: st.session_state.history_log = []
 
-# 词库
 if 'banned_words' not in st.session_state: st.session_state.banned_words = ''
 if 'required_words' not in st.session_state: st.session_state.required_words = ''
 
@@ -226,7 +223,7 @@ def fetch_url_content(url):
 # --- 5. 侧边栏 ---
 with st.sidebar:
     st.title("🔴 XHS Note AI")
-    st.caption("v33.8 终极修复版")
+    st.caption("v34.0 沉浸互动版")
     
     with st.expander("📖 新手操作指南", expanded=False):
         st.markdown("1. **选题**：用Tab1找灵感\n2. **创作**：用Tab2生成文案\n3. **文档**：种草模式可传PDF/TXT\n4. **运营**：看右侧封面与评论")
@@ -271,7 +268,6 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
         st.error("请先输入 API Key")
         return
     
-    # 🔥 修复核心：确保使用传入的 vocab_dict (它现在是一个字典)
     vocab_instruction = ""
     if vocab_dict.get('banned'): vocab_instruction += f"\n- 禁止使用：{vocab_dict['banned']}"
     if vocab_dict.get('required'): vocab_instruction += f"\n- 必须使用：{vocab_dict['required']}"
@@ -306,25 +302,32 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
         sys_p = f"仿写大师。{vocab_instruction}"; user_p = f"参考：\n{field1}\n\n新主题：{topic}"
         
     try:
+        # 1. 生成正文
         resp1 = client.chat.completions.create(
             model="deepseek-chat", messages=[{"role": "system", "content": sys_p}, {"role": "user", "content": user_p}], temperature=1.3
         )
-        st.session_state.generated_result = resp1.choices[0].message.content
+        note_content = resp1.choices[0].message.content
+        st.session_state.generated_result = note_content
         st.session_state.cover_url = get_random_cover()
         
         score, found = check_seo(st.session_state.generated_result)
         st.session_state.seo_score = score
         
-        # 运营生成
+        # 2. 运营生成 (🔥 核心优化：注入生成的笔记内容)
         strategy_prompt = f"""
-        针对“{topic}”笔记，请输出JSON：
+        基于这篇生成的笔记内容：
+        ----------------
+        {note_content[:1500]}
+        ----------------
+        
+        请输出 JSON 格式数据：
         {{
-            "cover_main": "封面大标题(6字内)",
-            "cover_sub": "副标题(10字内)",
+            "cover_main": "封面主标题(6字内,基于内容)",
+            "cover_sub": "副标题(10字内,基于内容)",
             "comments": [
-                {{"user": "用户A(提问)", "reply": "博主回复(引导)"}},
-                {{"user": "用户B(质疑)", "reply": "博主回复(解释)"}},
-                {{"user": "用户C(求资料)", "reply": "博主回复(私信)"}}
+                {{"user": "用户A(针对笔记中的某个观点/方法提问)", "reply": "博主回复(解释细节)"}},
+                {{"user": "用户B(表示共鸣/遇到了同样问题)", "reply": "博主回复(鼓励/引导)"}},
+                {{"user": "用户C(询问文中提到的工具/资源)", "reply": "博主回复(引导私信/看置顶)"}}
             ]
         }}
         """
@@ -445,6 +448,7 @@ with col_left:
                         st.session_state.uploaded_doc_content = doc_content
                         with st.spinner("🤖 正在提取卖点..."):
                             st.session_state.extracted_points = extract_points_from_doc(doc_content)
+                    
                     if st.session_state.extracted_points:
                         selected_points = st.multiselect("✅ 勾选核心要点", options=st.session_state.extracted_points, default=st.session_state.extracted_points[:3])
 
@@ -471,12 +475,8 @@ with col_left:
                 if not topic: st.warning("请输入主题")
                 else:
                     with st.spinner("AI 正在组织语言..."):
-                        # 🔥 修复：构建 vocab 字典再传递
-                        vocab_data = {
-                            "banned": st.session_state.banned_words,
-                            "required": st.session_state.required_words
-                        }
-                        generate_all("write", note_type, seeding_strategy, topic, field1, field2, doc_content, selected_points, selected_style_name, word_count, user_status, vocab_data, st.session_state.active_template)
+                        vocab = {"banned": st.session_state.banned_words, "required": st.session_state.required_words}
+                        generate_all("write", note_type, seeding_strategy, topic, field1, field2, doc_content, selected_points, selected_style_name, word_count, user_status, vocab, st.session_state.active_template)
 
     with tab3:
         with st.expander("📖 备考/上岸", expanded=True):
@@ -498,12 +498,8 @@ with col_left:
         ref = st.text_area("文案内容", value=st.session_state.ref_content_buffer, height=150)
         new_t = st.text_input("📌 新主题", key="mimic_topic")
         if st.button("🦜 开始仿写", type="primary", use_container_width=True):
-            # 修复仿写参数
-            vocab_data = {
-                "banned": st.session_state.banned_words,
-                "required": st.session_state.required_words
-            }
-            generate_all("copy", "", "", new_t, ref, "", "", "", "", "", "", vocab_data) 
+            vocab = {"banned": st.session_state.banned_words, "required": st.session_state.required_words}
+            generate_all("copy", "", "", new_t, ref, "", "", word_count, "", vocab) 
 
     with tab5:
         analyze_text_input = st.text_area("📄 粘贴爆款文案", height=150)
@@ -521,12 +517,13 @@ with col_left:
         
         st.markdown('<div class="magic-box"><b>✨ 魔法润色：</b></div>', unsafe_allow_html=True)
         r_cols = st.columns(4)
-        if r_cols[0].button("➕ 加Emoji"): refine_text("增加Emoji密度")
-        if r_cols[1].button("🔪 精简"): refine_text("精简废话")
+        if r_cols[0].button("➕ 加Emoji"): refine_text("增加Emoji")
+        if r_cols[1].button("🔪 精简"): refine_text("精简")
         if r_cols[2].button("🔥 强情绪"): refine_text("增强情绪")
         if r_cols[3].button("🗣️ 说人话"): refine_text("改口语")
 
-        with st.expander("💬 评论互动预设", expanded=True):
+        # 🔥 只保留评论预设
+        with st.expander("💬 评论区互动预设", expanded=True):
             if st.session_state.comments_data:
                 for c in st.session_state.comments_data:
                     st.markdown(f"<div class='comment-card'><div class='comment-user'>👤 {c.get('user','用户')}</div><div class='comment-reply'>↪️ {c.get('reply','')}</div></div>", unsafe_allow_html=True)
