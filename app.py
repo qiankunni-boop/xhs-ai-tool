@@ -6,10 +6,11 @@ import requests
 import datetime
 import re
 from io import StringIO
+import json
 
 # --- 1. 页面配置 ---
 st.set_page_config(
-    page_title="英语内容工场 v29.0",
+    page_title="英语内容工场 v29.1",
     page_icon="🎓",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -102,7 +103,7 @@ if 'input_topic' not in st.session_state: st.session_state.input_topic = ''
 if 'input_pain' not in st.session_state: st.session_state.input_pain = ''
 if 'input_features' not in st.session_state: st.session_state.input_features = ''
 if 'ref_content_buffer' not in st.session_state: st.session_state.ref_content_buffer = ''
-if 'uploaded_doc_content' not in st.session_state: st.session_state.uploaded_doc_content = '' # 新增：文档内容
+if 'uploaded_doc_content' not in st.session_state: st.session_state.uploaded_doc_content = ''
 
 if 'generated_result' not in st.session_state: st.session_state.generated_result = ''
 if 'growth_advice' not in st.session_state: st.session_state.growth_advice = ''
@@ -213,17 +214,10 @@ def restore_history(idx):
 # --- 5. 侧边栏 ---
 with st.sidebar:
     st.title("🎓 英语内容工场")
-    st.caption("v29.0 文档喂养版")
+    st.caption("v29.1 修复版")
     
-    # 🔥 新增：操作指南
-    with st.expander("📖 新手操作指南 (点我)", expanded=False):
-        st.markdown("""
-        **1. 选模式**：想带货选“种草”，想晒分选“经验”。
-        **2. 填内容**：输入主题，或在【📚 逻辑库】选一个模板。
-        **3. 传文档**：如果有产品说明书，可在“种草模式”下上传TXT，AI会自动读。
-        **4. 看结果**：右侧预览，左侧复制文案。
-        **5. 搞运营**：查看下方的“评论区预设”和“运营建议”。
-        """)
+    with st.expander("📖 新手操作指南", expanded=False):
+        st.markdown("1. 选模式：种草或经验\n2. 填内容：输入或选模板\n3. 传文档：种草模式可上传txt\n4. 看结果：右侧预览，下方看评论预设")
     
     if len(MY_SECRET_KEY) > 10:
         api_key = MY_SECRET_KEY
@@ -287,32 +281,15 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
         else:
             status_instruction = "【视角：已上岸】展示高分结果，体现权威感。"
 
-        # 🔥 策略逻辑分支 (加入文档内容)
+        # 🔥 策略逻辑
         if note_type == "种草/安利":
-            # 如果有文档，优先参考文档
-            doc_hint = f"\n【📄 产品核心文档】：{doc_content}\n(请从中提取具体参数和功能亮点融入文案)" if doc_content else ""
-            
+            doc_hint = f"\n【📄 产品文档参考】：{doc_content}\n(提取文档参数亮点)" if doc_content else ""
             if seeding_strategy == "⚖️ 竞品测评/拉踩":
-                type_instruction = f"""
-                【模式：竞品测评】
-                1. 结构：红黑榜/对比。
-                2. 竞品分析：[{field1}]的缺点。
-                3. 我的优势：自然引出[{topic}]。{doc_hint}
-                """
+                type_instruction = f"【模式：竞品测评】1.竞品分析[{field1}] 2.我的优势[{field2}] 3.结论避坑。{doc_hint}"
             else:
-                type_instruction = f"""
-                【模式：单品沉浸体验】
-                1. 痛点：[{field1}]。
-                2. 体验：使用前后变化。{doc_hint}
-                3. 共鸣：相见恨晚。
-                """
+                type_instruction = f"【模式：单品体验】1.痛点[{field1}] 2.体验变化[{field2}] 3.相见恨晚。{doc_hint}"
         else:
-            type_instruction = f"""
-            【模式：纯经验分享】
-            1. 背景：[{field1}]。
-            2. 方法：[{field2}]。
-            3. 去功利化：真诚分享。
-            """
+            type_instruction = f"【模式：经验分享】1.背景[{field1}] 2.方法[{field2}] 3.真诚分享。"
 
         if "朴实" in vibe: tone_instruction = "禁止流行语，语气平实像日记。"
         else: tone_instruction = "多用“亲测/建议收藏”，有网感。"
@@ -344,69 +321,48 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
         st.session_state.generated_result = resp1.choices[0].message.content
         st.session_state.cover_url = get_random_cover()
         
-        # SEO
         score, found = check_seo(st.session_state.generated_result)
         st.session_state.seo_score = score
         
-        # 🔥 优化：运营生成 (彻底解决内容冲突)
-        # 使用明确的分隔符，分别请求 "建议" 和 "评论"
+        # 运营生成 (逻辑分离)
         strategy_prompt = f"""
         针对“{topic}”笔记，生成两部分内容，中间用 "===SPLIT===" 分隔：
-        
-        第一部分：【运营建议】
-        1. 封面文案：主标题(6字内)+副标题(10字内)
-        2. 3条简短发布建议(时间/话题)
-        
+        Part1:【运营建议】1.封面文案(主标+副标) 2.发布建议
         ===SPLIT===
-        
-        第二部分：【评论区剧本】(JSON格式)
-        生成3个对象，包含user和reply。例如：
-        [
-            {{"user": "求资料", "reply": "私信了"}},
-            {{"user": "好用吗", "reply": "亲测有效"}}
-        ]
+        Part2:【评论剧本】JSON格式 [{{user:"", reply:""}}] 生成3条
         """
         resp2 = client.chat.completions.create(
             model="deepseek-chat", messages=[{"role": "user", "content": strategy_prompt}], temperature=1.0
         )
-        full_response = resp2.choices[0].message.content
+        full_res = resp2.choices[0].message.content
         
-        # 解析逻辑分离
-        if "===SPLIT===" in full_response:
-            parts = full_response.split("===SPLIT===")
-            advice_part = parts[0].strip()
-            comment_part = parts[1].strip()
+        if "===SPLIT===" in full_res:
+            advice_part, comment_part = full_res.split("===SPLIT===")
         else:
-            advice_part = full_response
-            comment_part = "[]"
+            advice_part, comment_part = full_res, "[]"
 
-        # 1. 处理建议与封面
-        st.session_state.growth_advice = advice_part
-        cover_main, cover_sub = "英语逆袭", "干货分享"
-        try:
-            for l in advice_part.split('\n'):
-                if "主标题" in l: cover_main = l.split("标题")[1].strip(":：")
-                if "副标题" in l: cover_sub = l.split("标题")[1].strip(":：")
-        except: pass
-        st.session_state.cover_design = {"main": cover_main[:8], "sub": cover_sub[:12]}
+        st.session_state.growth_advice = advice_part.strip()
+        
+        # 解析封面
+        c_main, c_sub = "英语逆袭", "干货分享"
+        for l in advice_part.split('\n'):
+            if "主标题" in l: c_main = l.split("标题")[1].strip(":：")
+            if "副标题" in l: c_sub = l.split("标题")[1].strip(":：")
+        st.session_state.cover_design = {"main": c_main[:8], "sub": c_sub[:12]}
 
-        # 2. 处理评论 (尝试解析JSON，失败则正则)
-        comments = []
+        # 解析评论
         try:
-            # 尝试清洗 JSON 字符串
-            json_str = re.search(r'\[.*\]', comment_part, re.DOTALL)
-            if json_str:
-                comments = json.loads(json_str.group())
+            json_match = re.search(r'\[.*\]', comment_part, re.DOTALL)
+            comments = json.loads(json_match.group()) if json_match else []
         except: 
-            # 兜底
-            comments = [{"user": "蹲后续", "reply": "关注不错过"}, {"user": "求分享", "reply": "已私信"}]
-            
+            comments = [{"user":"求资料","reply":"已私信"}]
         st.session_state.comments_data = comments[:3]
+        
         save_to_history(topic)
         
     except Exception as e: st.error(f"Error: {e}")
 
-# ... (Brainstorm, Analyze, Refine 保持不变) ...
+# ... (Brainstorm, Analyze, Refine) ...
 def brainstorm_topics(niche, angle):
     client = get_client()
     if not client: return
@@ -481,7 +437,121 @@ with col_left:
             note_type_label = st.selectbox("📝 笔记模式", ["🔴 强力种草 (带货/引流)", "🔵 纯经验分享 (复盘/晒分)"])
             note_type = "种草/安利" if "强力种草" in note_type_label else "纯经验分享"
             
-            # 🔥 策略选择
             seeding_strategy = "默认"
             if "种草" in note_type:
-                seeding_strategy = st.radio("🛠️ 种草策略", ["❤️
+                seeding_strategy = st.radio("🛠️ 种草策略", ["❤️ 沉浸式单品体验", "⚖️ 竞品测评/拉踩"], horizontal=True)
+
+            st.divider()
+            topic = st.text_input("📌 笔记主题", value=st.session_state.input_topic, placeholder="例：百词斩APP")
+            
+            # 文档上传
+            doc_content = ""
+            if "种草" in note_type:
+                uploaded_file = st.file_uploader("📂 上传产品文档 (TXT/MD)", type=['txt', 'md'])
+                if uploaded_file:
+                    stringio = StringIO(uploaded_file.getvalue().decode("utf-8"))
+                    doc_content = stringio.read()
+                    st.caption(f"✅ 已读取：{len(doc_content)}字")
+
+            c1, c2 = st.columns(2)
+            with c1:
+                if "种草" in note_type:
+                    if "竞品" in seeding_strategy:
+                        label1, holder1 = "🆚 竞品名单", "例：墨墨/不背"
+                    else:
+                        label1, holder1 = "🎯 用户痛点", "例：背了忘"
+                else:
+                    label1, holder1 = "🏁 背景/现状", "例：四级420"
+                field1 = st.text_input(label1, value=st.session_state.input_pain, placeholder=holder1)
+                
+            with c2:
+                if "种草" in note_type:
+                    if "竞品" in seeding_strategy:
+                        label2, holder2 = "🏆 我的优势", "例：免费"
+                    else:
+                        label2, holder2 = "✨ 核心卖点", "例：记忆曲线"
+                else:
+                    label2, holder2 = "💡 核心方法", "例：影子跟读"
+                field2 = st.text_input(label2, value=st.session_state.input_features, placeholder=holder2)
+            
+            if st.button("✨ 生成笔记", type="primary", use_container_width=True):
+                if not topic: st.warning("请输入主题")
+                else:
+                    with st.spinner("AI 正在组织语言..."):
+                        vocab = {"banned": banned_words, "required": required_words}
+                        generate_all("write", note_type, seeding_strategy, topic, field1, field2, doc_content, selected_style_name, word_count, user_status, vocab, st.session_state.active_template)
+
+    with tab3:
+        with st.expander("📖 备考/上岸", expanded=True):
+            cols = st.columns(3)
+            if cols[0].button("🚀 冲刺逆袭"): set_template_as_reference("四六级逆袭", "四六级最后30天", "单词背不完", "三色刷题法")
+            if cols[1].button("🧩 万能模版"): set_template_as_reference("雅思口语万能素材", "雅思口语", "考试卡壳", "一个素材套所有")
+            if cols[2].button("🎯 技巧蒙题"): set_template_as_reference("考研阅读蒙题", "考研英语阅读", "读不懂文章", "逻辑词定位")
+        with st.expander("📱 资源/APP"):
+            cols = st.columns(3)
+            if cols[0].button("📂 资料引流"): set_template_as_reference("外刊PDF分享", "外刊阅读", "资源难找", "免费分享")
+            if cols[1].button("🛠️ 工具安利"): set_template_as_reference("背单词神器", "背单词", "枯燥", "游戏化背词")
+            if cols[2].button("💣 避雷拔草"): set_template_as_reference("网红产品避雷", "文具避雷", "智商税", "亲测踩雷")
+
+    with tab4:
+        url_input = st.text_input("🔗 粘贴链接", placeholder="https://...")
+        if st.button("🔍 解析"):
+            fetched = fetch_url_content(url_input)
+            if fetched: st.session_state.ref_content_buffer = fetched
+        ref = st.text_area("文案内容", value=st.session_state.ref_content_buffer, height=150)
+        new_t = st.text_input("📌 新主题", key="mimic_topic")
+        if st.button("🦜 开始仿写", type="primary", use_container_width=True):
+            vocab = {"banned": banned_words, "required": required_words}
+            generate_all("copy", "", "", new_t, ref, "", "", word_count, "", vocab) 
+
+    with tab5:
+        analyze_text_input = st.text_area("📄 粘贴爆款文案", height=150)
+        if st.button("开始拆解"): analyze_text(analyze_text_input)
+        if st.session_state.analysis_report:
+            st.markdown(f"""<div class="analysis-card">{markdown_to_html_simple(st.session_state.analysis_report)}</div>""", unsafe_allow_html=True)
+
+    # 结果展示区
+    if st.session_state.generated_result:
+        st.markdown("### 🎉 生成结果")
+        st.text_area("📋 纯文案", value=st.session_state.generated_result, height=300)
+        
+        seo_color = "#10b981" if st.session_state.seo_score > 80 else "#f59e0b"
+        st.markdown(f"""<div class="seo-box"><b>🔍 SEO 得分：<span style='color:{seo_color}'>{st.session_state.seo_score}</span></b><br>热词覆盖：{' '.join([f'<span class="keyword-tag">{k}</span>' for k in check_seo(st.session_state.generated_result)[1]])}</div>""", unsafe_allow_html=True)
+        
+        st.markdown('<div class="magic-box"><b>✨ 魔法润色：</b></div>', unsafe_allow_html=True)
+        r_cols = st.columns(4)
+        if r_cols[0].button("➕ 加Emoji"): refine_text("增加Emoji")
+        if r_cols[1].button("🔪 精简"): refine_text("精简")
+        if r_cols[2].button("🔥 强情绪"): refine_text("增强情绪")
+        if r_cols[3].button("🗣️ 说人话"): refine_text("改口语")
+
+        with st.expander("💬 评论互动预设", expanded=True):
+            if st.session_state.comments_data:
+                for c in st.session_state.comments_data:
+                    st.markdown(f"<div class='comment-card'><div class='comment-user'>👤 {c.get('user','用户')}</div><div class='comment-reply'>↪️ {c.get('reply','')}</div></div>", unsafe_allow_html=True)
+        
+        with st.expander("📈 运营建议"):
+            st.markdown(markdown_to_html_simple(st.session_state.growth_advice), unsafe_allow_html=True)
+
+# === 👉 右侧：预览 ===
+with col_right:
+    html_content = markdown_to_html_simple(st.session_state.generated_result) if st.session_state.generated_result else "<div style='text-align:center;padding-top:50%;color:#ccc;'>👋 点击左侧生成</div>"
+    c_main = st.session_state.cover_design.get("main", "")
+    c_sub = st.session_state.cover_design.get("sub", "")
+    st.markdown(f"""
+    <div style="display:flex; justify-content:center; align-items:center; height:100%;">
+        <div class="iphone-frame">
+            <div class="notch"></div>
+            <div class="screen-content">
+                <div class="cover-container">
+                    <img src="{st.session_state.cover_url}" class="cover-img">
+                    <div class="cover-overlay">
+                        <div class="cover-main-title">{c_main}</div>
+                        <div class="cover-sub-title">{c_sub}</div>
+                    </div>
+                </div>
+                {html_content}
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
