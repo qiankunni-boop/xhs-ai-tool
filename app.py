@@ -16,7 +16,7 @@ try:
 except: pass
 
 st.set_page_config(
-    page_title="XHS Note AI v34.2",
+    page_title="XHS Note AI v35.0",
     page_icon="🔴",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -43,6 +43,18 @@ st.markdown("""
     }
     .stButton button:hover {
         transform: translateY(-2px); box-shadow: 0 6px 15px rgba(255, 36, 66, 0.3); color: white !important;
+    }
+    
+    /* 🔄 重新生成按钮特别样式 (灰色) */
+    .rerun-btn button {
+        background: #f3f4f6 !important;
+        color: #4b5563 !important;
+        border: 1px solid #d1d5db !important;
+        box-shadow: none !important;
+    }
+    .rerun-btn button:hover {
+        background: #e5e7eb !important;
+        color: #1f2937 !important;
     }
 
     /* 📱 仿真手机预览 */
@@ -120,10 +132,13 @@ if 'input_soft_ad' not in st.session_state: st.session_state.input_soft_ad = ''
 if 'input_scenario' not in st.session_state: st.session_state.input_scenario = ''
 if 'input_category' not in st.session_state: st.session_state.input_category = ''
 
+# 文档相关
 if 'uploaded_doc_content' not in st.session_state: st.session_state.uploaded_doc_content = '' 
 if 'extracted_points' not in st.session_state: st.session_state.extracted_points = []
 
+# 结果相关
 if 'generated_result' not in st.session_state: st.session_state.generated_result = ''
+if 'growth_advice' not in st.session_state: st.session_state.growth_advice = ''
 if 'cover_design' not in st.session_state: st.session_state.cover_design = {"main": "", "sub": ""}
 if 'comments_data' not in st.session_state: st.session_state.comments_data = []
 if 'seo_score' not in st.session_state: st.session_state.seo_score = 0
@@ -136,6 +151,9 @@ if 'history_log' not in st.session_state: st.session_state.history_log = []
 
 if 'banned_words' not in st.session_state: st.session_state.banned_words = ''
 if 'required_words' not in st.session_state: st.session_state.required_words = ''
+
+# 🔥 新增：存储上一次生成时的参数，用于“重新生成”
+if 'last_params' not in st.session_state: st.session_state.last_params = None
 
 # --- 4. 辅助函数 ---
 def get_client():
@@ -186,6 +204,7 @@ def save_to_history(topic):
         "topic": topic,
         "result": st.session_state.generated_result,
         "comments": st.session_state.comments_data,
+        "advice": st.session_state.growth_advice,
         "cover": st.session_state.cover_url,
         "cover_txt": st.session_state.cover_design
     }
@@ -196,6 +215,7 @@ def restore_history(idx):
     entry = st.session_state.history_log[idx]
     st.session_state.generated_result = entry['result']
     st.session_state.comments_data = entry['comments']
+    st.session_state.growth_advice = entry['advice']
     st.session_state.cover_url = entry['cover']
     st.session_state.cover_design = entry.get('cover_txt', {"main":"", "sub":""})
     st.session_state.input_topic = entry['topic']
@@ -226,7 +246,7 @@ def fetch_url_content(url):
 # --- 5. 侧边栏 ---
 with st.sidebar:
     st.title("🔴 XHS Note AI")
-    st.caption("v34.2 深度扩写修复版")
+    st.caption("v35.0 重新生成版")
     
     with st.expander("📖 新手操作指南", expanded=False):
         st.markdown("1. 选模式\n2. 填内容\n3. 传文档\n4. 看结果")
@@ -257,7 +277,6 @@ with st.sidebar:
     selected_style_name = st.selectbox("选择风格", list(style_map.keys()))
     st.info(style_map[selected_style_name]['desc'])
 
-    # 🔥 滑块：深度扩写控制
     word_count = st.slider("📏 篇幅控制", 100, 1500, 400, 100, help="拉到800+字会触发深度扩写模式")
 
     st.divider()
@@ -278,32 +297,19 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
 
     if mode == "write":
         
-        # 🔥🔥🔥 核心修复：强力字数与结构控制 🔥🔥🔥
-        length_instruction = ""
+        # 深度扩写指令
         if length >= 800:
-            length_instruction = f"""
-            【🚨 深度长文指令 (Target: {length}+ words)】
-            1. **深度展开**：每一个观点必须写满 150 字以上。
-            2. **拒绝流水账**：必须包含具体的使用场景描写、心理活动变化、详细的操作步骤。
-            3. **举例子**：遇到干货点，必须举一个具体的例子（如：背单词时遇到的困难 vs 用了方法后的效果）。
-            """
+            length_instruction = f"【🚨 深度长文(Target: {length}+ words)】禁止简略！每个观点必须展开，包含具体场景、心理活动、操作细节。遇到干货必须举例。"
         elif length <= 300:
-            length_instruction = f"【⚡️ 短平快指令 (Target: {length} words)】言简意赅，只讲重点，不要废话。"
+            length_instruction = f"【⚡️ 短平快(Target: {length} words)】言简意赅，只讲重点。"
         else:
-            length_instruction = f"【📝 标准篇幅指令 (Target: {length} words)】内容充实，逻辑清晰。"
+            length_instruction = f"【📝 标准篇幅(Target: {length} words)】内容充实。"
 
-        # 🔥 反八股文结构
-        structure_instruction = """
-        【🚨 结构要求 - 拒绝AI味】：
-        1. **禁止死板格式**：不要全篇都是“标题+列表+标签”。
-        2. **自然语流**：像写日记或聊天一样，允许大段的感悟描写，Emoji 要融入句子中间。
-        3. **情绪穿插**：情绪要渗透在每一段文字里，而不是只在开头结尾。
-        """
+        structure_instruction = "【🚨 结构】：禁止死板的标题列表体。要像真人聊天/日记，段落长短结合，情绪穿插全文。"
 
         base_prompt = f"""
         你是一个小红书英语教育博主。人设：{vibe}。
-        {length_instruction}
-        {structure_instruction}
+        {length_instruction} {structure_instruction}
         任务：写一篇关于【{topic}】的笔记。
         """
         
@@ -318,11 +324,10 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
         if scenario: context_info += f"【切入场景】：{scenario}\n"
         if category: context_info += f"【产品品类】：{category}\n"
 
-        # 广告浓度
         ad_instruction = ""
         if ad_intensity:
-            if "隐形" in ad_intensity: ad_instruction = "【广告浓度：低】伪装成分享，最后露出。"
-            elif "硬核" in ad_intensity: ad_instruction = "【广告浓度：高】开头直接硬广，强调买买买。"
+            if "隐形" in ad_intensity: ad_instruction = "【广告浓度：低】伪装分享，最后露出。"
+            elif "硬核" in ad_intensity: ad_instruction = "【广告浓度：高】开头硬广，强调买买买。"
             else: ad_instruction = "【广告浓度：中】标准种草。"
 
         if "种草" in note_type:
@@ -361,16 +366,12 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
         基于笔记：
         {note_content[:1000]}
         
-        输出JSON(必须包含5条)：
+        输出JSON，包含5条评论(user/reply)，模拟真实用户提问细节、质疑、共鸣、催更、求同款。
         {{
             "cover_main": "封面大标题(6字内)",
             "cover_sub": "副标题(10字内)",
             "comments": [
-                {{"user": "用户A(提问)", "reply": "博主回复(引导)"}},
-                {{"user": "用户B(质疑)", "reply": "博主回复(解释)"}},
-                {{"user": "用户C(求资料)", "reply": "博主回复(私信)"}},
-                {{"user": "用户D(催更)", "reply": "博主回复"}},
-                {{"user": "用户E(共鸣)", "reply": "博主回复"}}
+                {{"user": "用户A", "reply": "回复A"}}, ...
             ]
         }}
         """
@@ -529,12 +530,25 @@ with col_left:
             if note_type == "纯经验分享":
                 soft_ad = st.text_input("📦 软广植入 (可选)", value=st.session_state.input_soft_ad, placeholder="例：文中顺带提一下扇贝单词")
 
+            # 🔥 生成按钮：保存参数 -> 调用生成
             if st.button("✨ 生成笔记", type="primary", use_container_width=True):
                 if not topic: st.warning("请输入主题")
                 else:
                     with st.spinner("AI 正在组织语言..."):
+                        # 1. 收集所有参数
                         vocab = {"banned": st.session_state.banned_words, "required": st.session_state.required_words}
-                        generate_all("write", note_type, seeding_strategy, topic, field1, field2, doc_content, selected_points, soft_ad, scenario, category, selected_style_name, word_count, user_status, vocab, st.session_state.active_template, ad_intensity)
+                        current_params = {
+                            "mode": "write", "note_type": note_type, "seeding_strategy": seeding_strategy, 
+                            "topic": topic, "field1": field1, "field2": field2, "doc_content": doc_content, 
+                            "selected_points": selected_points, "soft_ad": soft_ad, "scenario": scenario, 
+                            "category": category, "vibe": selected_style_name, "length": word_count, 
+                            "status": user_status, "vocab_dict": vocab, "ref_template": st.session_state.active_template, 
+                            "ad_intensity": ad_intensity
+                        }
+                        # 2. 保存到 Session State
+                        st.session_state.last_params = current_params
+                        # 3. 调用生成
+                        generate_all(**current_params)
 
     with tab3:
         with st.expander("📖 备考/上岸", expanded=True):
@@ -557,7 +571,14 @@ with col_left:
         new_t = st.text_input("📌 新主题", key="mimic_topic")
         if st.button("🦜 开始仿写", type="primary", use_container_width=True):
             vocab = {"banned": st.session_state.banned_words, "required": st.session_state.required_words}
-            generate_all("copy", "", "", new_t, ref, "", "", "", "", "", "", "", word_count, "", vocab, None, "") 
+            # 仿写参数适配
+            current_params = {
+                "mode": "copy", "note_type": "", "seeding_strategy": "", "topic": new_t, "field1": ref, "field2": "", 
+                "doc_content": "", "selected_points": "", "soft_ad": "", "scenario": "", "category": "", "vibe": "", 
+                "length": word_count, "status": "", "vocab_dict": vocab, "ref_template": None, "ad_intensity": ""
+            }
+            st.session_state.last_params = current_params
+            generate_all(**current_params)
 
     with tab5:
         analyze_text_input = st.text_area("📄 粘贴爆款文案", height=150)
@@ -568,10 +589,16 @@ with col_left:
     # 结果展示区
     if st.session_state.generated_result:
         st.markdown("### 🎉 生成结果")
-        st.text_area("📋 纯文案", value=st.session_state.generated_result, height=300)
         
-        seo_color = "#10b981" if st.session_state.seo_score > 80 else "#f59e0b"
-        st.markdown(f"""<div class="seo-box"><b>🔍 SEO 得分：<span style='color:{seo_color}'>{st.session_state.seo_score}</span></b><br>热词覆盖：{' '.join([f'<span class="keyword-tag">{k}</span>' for k in check_seo(st.session_state.generated_result)[1]])}</div>""", unsafe_allow_html=True)
+        # 🔥 重新生成按钮 (灰色)
+        if st.button("🔄 不满意？重新生成", key="regen_btn", help="使用完全相同的参数再试一次"):
+            if st.session_state.last_params:
+                with st.spinner("🔄 正在重写..."):
+                    generate_all(**st.session_state.last_params)
+            else:
+                st.warning("请先生成一次内容")
+        
+        st.text_area("📋 纯文案", value=st.session_state.generated_result, height=300)
         
         st.markdown('<div class="magic-box"><b>✨ 魔法润色：</b></div>', unsafe_allow_html=True)
         r_cols = st.columns(4)
