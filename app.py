@@ -9,14 +9,14 @@ import json
 import sys
 from io import StringIO
 
-# 🔥 1. 基础配置
+# 🔥 1. 基础配置 (强制 UTF-8)
 try:
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
 except: pass
 
 st.set_page_config(
-    page_title="XHS Note AI v33.6",
+    page_title="XHS Note AI v33.7",
     page_icon="🔴",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -28,7 +28,7 @@ st.set_page_config(
 MY_SECRET_KEY = "sk-99458a2eb9a3465886f3394d7ec6da69"
 # ==========================================
 
-# --- 2. CSS 样式 (保持高颜值) ---
+# --- 2. CSS 样式 ---
 st.markdown("""
 <style>
     .stApp { background-color: #f8f9fa; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
@@ -117,10 +117,13 @@ if 'input_pain' not in st.session_state: st.session_state.input_pain = ''
 if 'input_features' not in st.session_state: st.session_state.input_features = ''
 if 'ref_content_buffer' not in st.session_state: st.session_state.ref_content_buffer = ''
 
+# 文档相关
 if 'uploaded_doc_content' not in st.session_state: st.session_state.uploaded_doc_content = '' 
 if 'extracted_points' not in st.session_state: st.session_state.extracted_points = []
 
+# 结果相关
 if 'generated_result' not in st.session_state: st.session_state.generated_result = ''
+if 'growth_advice' not in st.session_state: st.session_state.growth_advice = ''
 if 'cover_design' not in st.session_state: st.session_state.cover_design = {"main": "", "sub": ""}
 if 'comments_data' not in st.session_state: st.session_state.comments_data = []
 if 'seo_score' not in st.session_state: st.session_state.seo_score = 0
@@ -130,6 +133,8 @@ if 'cover_url' not in st.session_state: st.session_state.cover_url = "https://im
 if 'active_template' not in st.session_state: st.session_state.active_template = None 
 if 'topic_ideas' not in st.session_state: st.session_state.topic_ideas = [] 
 if 'history_log' not in st.session_state: st.session_state.history_log = []
+
+# 🔥 核心修复：确保词库变量存在
 if 'banned_words' not in st.session_state: st.session_state.banned_words = ''
 if 'required_words' not in st.session_state: st.session_state.required_words = ''
 
@@ -182,6 +187,7 @@ def save_to_history(topic):
         "topic": topic,
         "result": st.session_state.generated_result,
         "comments": st.session_state.comments_data,
+        "advice": st.session_state.growth_advice,
         "cover": st.session_state.cover_url,
         "cover_txt": st.session_state.cover_design
     }
@@ -192,6 +198,7 @@ def restore_history(idx):
     entry = st.session_state.history_log[idx]
     st.session_state.generated_result = entry['result']
     st.session_state.comments_data = entry['comments']
+    st.session_state.growth_advice = entry['advice']
     st.session_state.cover_url = entry['cover']
     st.session_state.cover_design = entry.get('cover_txt', {"main":"", "sub":""})
     st.session_state.input_topic = entry['topic']
@@ -205,12 +212,12 @@ def extract_points_from_doc(doc_text):
     try:
         resp = client.chat.completions.create(
             model="deepseek-chat",
-            messages=[{"role": "system", "content": "提取卖点列表。"}, {"role": "user", "content": f"文档：{doc_text[:1000]}"}],
+            messages=[{"role": "system", "content": "提取产品卖点，只输出列表，不要编号。"}, {"role": "user", "content": f"文档：{doc_text[:1000]}"}],
             temperature=1.0
         )
         points = [l.strip("- ").strip() for l in resp.choices[0].message.content.split('\n') if l.strip()]
         return points[:10]
-    except: return ["提取失败"]
+    except: return ["提取失败，请重试"]
 
 def fetch_url_content(url):
     try:
@@ -222,10 +229,10 @@ def fetch_url_content(url):
 # --- 5. 侧边栏 ---
 with st.sidebar:
     st.title("🔴 XHS Note AI")
-    st.caption("v33.6 强力扩充版")
+    st.caption("v33.7 终极稳定版")
     
     with st.expander("📖 新手操作指南", expanded=False):
-        st.markdown("1. 选模式\n2. 填内容\n3. 传文档\n4. 看结果")
+        st.markdown("1. **选题**：用Tab1找灵感\n2. **创作**：用Tab2生成文案\n3. **文档**：种草模式可传PDF/TXT\n4. **运营**：看右侧封面与评论")
     
     api_key = st.text_input("🔑 输入 Key", type="password")
     
@@ -253,11 +260,11 @@ with st.sidebar:
     selected_style_name = st.selectbox("选择风格", list(style_map.keys()))
     st.info(style_map[selected_style_name]['desc'])
 
-    # 🔥 优化：带单位的滑块，范围更广
-    word_count = st.slider("📏 目标字数", 100, 1500, 400, 100, help="AI会尝试接近这个字数，建议长文选800以上")
+    word_count = st.slider("📏 预估篇幅", 100, 1000, 400, 100, help="AI会尝试接近这个字数，建议长文选800以上")
 
     st.divider()
     with st.expander("🚫 私有词库", expanded=False):
+        # 🔥 绑定到 st.session_state，彻底解决 NameError
         st.text_area("🚫 禁用词", placeholder="首先 其次 总之", key="banned_words")
         st.text_area("✅ 必用词", placeholder="绝绝子 闭眼冲", key="required_words")
 
@@ -268,6 +275,7 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
         st.error("请先输入 API Key")
         return
     
+    # 🔥 修复：直接从 session_state 获取词库数据
     vocab_banned = st.session_state.banned_words
     vocab_required = st.session_state.required_words
     
@@ -277,14 +285,14 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
 
     if mode == "write":
         
-        # 🔥🔥🔥 核心升级：字数扩充逻辑 🔥🔥🔥
+        # 篇幅控制逻辑
         length_instruction = ""
         if length >= 800:
-            length_instruction = f"【🔥 深度长文指令】：目标字数{length}+。必须深度展开！每一个观点都要举具体的例子、写具体的场景、列出详细的步骤。禁止一笔带过。结构必须丰富（引入-痛点-干货-案例-总结）。"
+            length_instruction = f"【深度长文指令】：字数{length}+。深度展开，举具体例子，写详细步骤。"
         elif length >= 500:
-            length_instruction = f"【📝 标准篇幅指令】：目标字数{length}左右。内容要充实，不要只写骨架，要有血有肉的细节描述。"
+            length_instruction = f"【标准篇幅指令】：字数{length}左右。内容充实，有细节。"
         else:
-            length_instruction = f"【⚡️ 短小精悍指令】：控制在{length}字以内。言简意赅，只讲重点，适合快速阅读。"
+            length_instruction = f"【短小精悍指令】：字数{length}以内。言简意赅。"
 
         base_prompt = f"""
         你是一个小红书英语教育博主。人设：{vibe}。
@@ -295,6 +303,7 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
         if "正在备考" in status: status_instruction = "【视角：备考中】体现发现感，禁止说已上岸。"
         else: status_instruction = "【视角：已上岸】体现权威感，展示高分结果。"
 
+        # 文档提示
         doc_hint = ""
         if selected_points: doc_hint = f"\n必须包含卖点：{','.join(selected_points)}"
         elif doc_content: doc_hint = f"\n参考文档：{doc_content[:500]}"
@@ -327,6 +336,7 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
         score, found = check_seo(st.session_state.generated_result)
         st.session_state.seo_score = score
         
+        # 运营生成
         strategy_prompt = f"""
         针对“{topic}”笔记，请输出JSON：
         {{
@@ -360,7 +370,9 @@ def brainstorm_topics(niche, angle):
     client = get_client()
     if not client: return
     sys_p = f"选题策划。当前{datetime.datetime.now().month}月。"
-    angle_p = "结合热点" if "热点" in angle else "直击痛点"
+    if angle == "🔥 蹭热点/时效性": angle_p = "结合考试季/假期。"
+    elif angle == "💡 冷门蓝海/差异化": angle_p = "反直觉观点。"
+    else: angle_p = "直击焦虑痛点。"
     user_p = f"领域：{niche}。切角：{angle_p}。5个爆款标题。"
     try:
         resp = client.chat.completions.create(
@@ -483,8 +495,8 @@ with col_left:
                 if not topic: st.warning("请输入主题")
                 else:
                     with st.spinner("AI 正在组织语言..."):
-                        vocab = {"banned": st.session_state.banned_words, "required": st.session_state.required_words}
-                        generate_all("write", note_type, seeding_strategy, topic, field1, field2, doc_content, selected_points, selected_style_name, word_count, user_status, vocab, st.session_state.active_template)
+                        # 🔥 修复：直接传 st.session_state 对象，不依赖局部变量
+                        generate_all("write", note_type, seeding_strategy, topic, field1, field2, doc_content, selected_points, selected_style_name, word_count, user_status, st.session_state, st.session_state.active_template)
 
     with tab3:
         with st.expander("📖 备考/上岸", expanded=True):
@@ -506,8 +518,8 @@ with col_left:
         ref = st.text_area("文案内容", value=st.session_state.ref_content_buffer, height=150)
         new_t = st.text_input("📌 新主题", key="mimic_topic")
         if st.button("🦜 开始仿写", type="primary", use_container_width=True):
-            vocab = {"banned": st.session_state.banned_words, "required": st.session_state.required_words}
-            generate_all("copy", "", "", new_t, ref, "", "", word_count, "", vocab) 
+            # 修复仿写参数
+            generate_all("copy", "", "", new_t, ref, "", "", "", "", "", "", st.session_state) 
 
     with tab5:
         analyze_text_input = st.text_area("📄 粘贴爆款文案", height=150)
