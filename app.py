@@ -16,7 +16,7 @@ try:
 except: pass
 
 st.set_page_config(
-    page_title="XHS Note AI v37.1",
+    page_title="XHS Note AI v34.2",
     page_icon="🔴",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -120,13 +120,10 @@ if 'input_soft_ad' not in st.session_state: st.session_state.input_soft_ad = ''
 if 'input_scenario' not in st.session_state: st.session_state.input_scenario = ''
 if 'input_category' not in st.session_state: st.session_state.input_category = ''
 
-# 文档相关
 if 'uploaded_doc_content' not in st.session_state: st.session_state.uploaded_doc_content = '' 
 if 'extracted_points' not in st.session_state: st.session_state.extracted_points = []
 
-# 结果相关
 if 'generated_result' not in st.session_state: st.session_state.generated_result = ''
-if 'growth_advice' not in st.session_state: st.session_state.growth_advice = ''
 if 'cover_design' not in st.session_state: st.session_state.cover_design = {"main": "", "sub": ""}
 if 'comments_data' not in st.session_state: st.session_state.comments_data = []
 if 'seo_score' not in st.session_state: st.session_state.seo_score = 0
@@ -189,7 +186,6 @@ def save_to_history(topic):
         "topic": topic,
         "result": st.session_state.generated_result,
         "comments": st.session_state.comments_data,
-        "advice": st.session_state.growth_advice,
         "cover": st.session_state.cover_url,
         "cover_txt": st.session_state.cover_design
     }
@@ -200,7 +196,6 @@ def restore_history(idx):
     entry = st.session_state.history_log[idx]
     st.session_state.generated_result = entry['result']
     st.session_state.comments_data = entry['comments']
-    st.session_state.growth_advice = entry['advice']
     st.session_state.cover_url = entry['cover']
     st.session_state.cover_design = entry.get('cover_txt', {"main":"", "sub":""})
     st.session_state.input_topic = entry['topic']
@@ -231,10 +226,10 @@ def fetch_url_content(url):
 # --- 5. 侧边栏 ---
 with st.sidebar:
     st.title("🔴 XHS Note AI")
-    st.caption("v37.1 完美修复版")
+    st.caption("v34.2 深度扩写修复版")
     
     with st.expander("📖 新手操作指南", expanded=False):
-        st.markdown("1. 选模式\n2. 填内容 (可选场景/品类)\n3. 传文档\n4. 看结果")
+        st.markdown("1. 选模式\n2. 填内容\n3. 传文档\n4. 看结果")
     
     api_key = st.text_input("🔑 输入 Key", type="password")
     
@@ -262,14 +257,15 @@ with st.sidebar:
     selected_style_name = st.selectbox("选择风格", list(style_map.keys()))
     st.info(style_map[selected_style_name]['desc'])
 
-    word_count = st.slider("📏 预估篇幅", 100, 1000, 400, 100, help="AI会尝试接近这个字数")
+    # 🔥 滑块：深度扩写控制
+    word_count = st.slider("📏 篇幅控制", 100, 1500, 400, 100, help="拉到800+字会触发深度扩写模式")
 
     st.divider()
     with st.expander("🚫 私有词库", expanded=False):
         st.text_area("🚫 禁用词", placeholder="首先 其次 总之", key="banned_words")
         st.text_area("✅ 必用词", placeholder="绝绝子 闭眼冲", key="required_words")
 
-# --- 6. 核心生成逻辑 (🔥 修复点：确保参数顺序与调用一致) ---
+# --- 6. 核心生成逻辑 ---
 def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_content, selected_points, soft_ad, scenario, category, vibe, length, status, vocab_dict, ref_template=None, ad_intensity=None):
     client = get_client()
     if not client: 
@@ -281,9 +277,33 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
     if vocab_dict.get('required'): vocab_instruction += f"\n- 必须使用：{vocab_dict['required']}"
 
     if mode == "write":
+        
+        # 🔥🔥🔥 核心修复：强力字数与结构控制 🔥🔥🔥
+        length_instruction = ""
+        if length >= 800:
+            length_instruction = f"""
+            【🚨 深度长文指令 (Target: {length}+ words)】
+            1. **深度展开**：每一个观点必须写满 150 字以上。
+            2. **拒绝流水账**：必须包含具体的使用场景描写、心理活动变化、详细的操作步骤。
+            3. **举例子**：遇到干货点，必须举一个具体的例子（如：背单词时遇到的困难 vs 用了方法后的效果）。
+            """
+        elif length <= 300:
+            length_instruction = f"【⚡️ 短平快指令 (Target: {length} words)】言简意赅，只讲重点，不要废话。"
+        else:
+            length_instruction = f"【📝 标准篇幅指令 (Target: {length} words)】内容充实，逻辑清晰。"
+
+        # 🔥 反八股文结构
+        structure_instruction = """
+        【🚨 结构要求 - 拒绝AI味】：
+        1. **禁止死板格式**：不要全篇都是“标题+列表+标签”。
+        2. **自然语流**：像写日记或聊天一样，允许大段的感悟描写，Emoji 要融入句子中间。
+        3. **情绪穿插**：情绪要渗透在每一段文字里，而不是只在开头结尾。
+        """
+
         base_prompt = f"""
         你是一个小红书英语教育博主。人设：{vibe}。
-        【字数控制】：{length}字左右。
+        {length_instruction}
+        {structure_instruction}
         任务：写一篇关于【{topic}】的笔记。
         """
         
@@ -298,7 +318,7 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
         if scenario: context_info += f"【切入场景】：{scenario}\n"
         if category: context_info += f"【产品品类】：{category}\n"
 
-        # 广告浓度逻辑
+        # 广告浓度
         ad_instruction = ""
         if ad_intensity:
             if "隐形" in ad_intensity: ad_instruction = "【广告浓度：低】伪装成分享，最后露出。"
@@ -341,14 +361,16 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
         基于笔记：
         {note_content[:1000]}
         
-        输出JSON：
+        输出JSON(必须包含5条)：
         {{
             "cover_main": "封面大标题(6字内)",
             "cover_sub": "副标题(10字内)",
             "comments": [
-                {{"user": "用户A", "reply": "回复A"}},
-                {{"user": "用户B", "reply": "回复B"}},
-                {{"user": "用户C", "reply": "回复C"}}
+                {{"user": "用户A(提问)", "reply": "博主回复(引导)"}},
+                {{"user": "用户B(质疑)", "reply": "博主回复(解释)"}},
+                {{"user": "用户C(求资料)", "reply": "博主回复(私信)"}},
+                {{"user": "用户D(催更)", "reply": "博主回复"}},
+                {{"user": "用户E(共鸣)", "reply": "博主回复"}}
             ]
         }}
         """
@@ -448,7 +470,6 @@ with col_left:
             seeding_strategy = "默认"
             ad_intensity = ""
             
-            # 🔥 种草模式 UI
             if "种草" in note_type:
                 c_s1, c_s2 = st.columns(2)
                 with c_s1:
@@ -465,9 +486,13 @@ with col_left:
                 scenario, category = "", ""
 
             st.divider()
-            topic = st.text_input("📌 笔记主题", value=st.session_state.input_topic, placeholder="例：百词斩APP怎么用")
             
-            # 文档上传
+            ph_topic = "例：百词斩APP安利"
+            if "经验" in note_type: ph_topic = "例：四六级备考复盘"
+            elif "教程" in note_type: ph_topic = "例：Notion做笔记教程"
+            
+            topic = st.text_input("📌 笔记主题", value=st.session_state.input_topic, placeholder=ph_topic)
+            
             doc_content = ""
             selected_points = []
             if note_type in ["种草/安利", "科普/教程"]:
@@ -500,7 +525,6 @@ with col_left:
                     label2, holder2 = "💡 核心方法", "例：影子跟读"
                 field2 = st.text_input(label2, value=st.session_state.input_features, placeholder=holder2)
             
-            # 软广植入
             soft_ad = ""
             if note_type == "纯经验分享":
                 soft_ad = st.text_input("📦 软广植入 (可选)", value=st.session_state.input_soft_ad, placeholder="例：文中顺带提一下扇贝单词")
@@ -510,7 +534,6 @@ with col_left:
                 else:
                     with st.spinner("AI 正在组织语言..."):
                         vocab = {"banned": st.session_state.banned_words, "required": st.session_state.required_words}
-                        # 🔥 修复：正确传递 ad_intensity 参数
                         generate_all("write", note_type, seeding_strategy, topic, field1, field2, doc_content, selected_points, soft_ad, scenario, category, selected_style_name, word_count, user_status, vocab, st.session_state.active_template, ad_intensity)
 
     with tab3:
@@ -534,7 +557,6 @@ with col_left:
         new_t = st.text_input("📌 新主题", key="mimic_topic")
         if st.button("🦜 开始仿写", type="primary", use_container_width=True):
             vocab = {"banned": st.session_state.banned_words, "required": st.session_state.required_words}
-            # 修复仿写调用
             generate_all("copy", "", "", new_t, ref, "", "", "", "", "", "", "", word_count, "", vocab, None, "") 
 
     with tab5:
