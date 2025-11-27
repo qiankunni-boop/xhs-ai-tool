@@ -9,18 +9,15 @@ import json
 import sys
 from io import StringIO
 
-# 🔥 核心修复1：强制设置系统输出编码为 UTF-8
-# 这能解决 'ascii' codec can't encode ... 报错，确保按钮点击后不崩
+# 🔥 1. 基础配置 & 编码修复
 try:
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
-except:
-    pass
+except: pass
 
-# --- 1. 页面配置 ---
 st.set_page_config(
-    page_title="英语内容工场 v33.1",
-    page_icon="🎓",
+    page_title="XHS Note AI v33.2",
+    page_icon="🔴",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -31,10 +28,14 @@ st.set_page_config(
 MY_SECRET_KEY = "sk-99458a2eb9a3465886f3394d7ec6da69"
 # ==========================================
 
-# --- 2. CSS 样式 (保留 v32/v33 的高颜值) ---
+# --- 2. CSS 样式 ---
 st.markdown("""
 <style>
-    .stApp {font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; background-color: #f8f9fa;}
+    /* 全局美化 */
+    .stApp {
+        background-color: #f8f9fa;
+        font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+    }
     #MainMenu, footer, header {visibility: hidden;}
 
     /* 🔴 按钮美化 */
@@ -93,13 +94,17 @@ st.markdown("""
     .comment-card { background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 10px; margin-top: 8px; font-size: 13px; }
     .magic-box { background: #fff1f2; border: 1px solid #fda4af; padding: 10px; border-radius: 12px; margin-top: 15px; }
     .status-box-ref { background: #fffbeb; border: 1px solid #f59e0b; color: #b45309; padding: 8px 12px; border-radius: 8px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;}
+    .status-box-free { background: #eff6ff; border: 1px solid #3b82f6; color: #1d4ed8; padding: 8px 12px; border-radius: 8px; margin-bottom: 15px;}
     
     /* 选题卡片 */
     .idea-card { display:block; width:100%; text-align:left; border:1px solid #eee; padding:10px; border-radius:8px; margin-bottom:8px; background:white; }
+    
+    /* 标签样式 */
+    .stMultiSelect span { background-color: #e0f2fe !important; color: #0284c7 !important; border-radius: 4px !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. 状态管理 (恢复 v31.1 所有状态) ---
+# --- 3. 状态管理 ---
 if 'input_topic' not in st.session_state: st.session_state.input_topic = ''
 if 'input_pain' not in st.session_state: st.session_state.input_pain = ''
 if 'input_features' not in st.session_state: st.session_state.input_features = ''
@@ -119,7 +124,7 @@ if 'analysis_report' not in st.session_state: st.session_state.analysis_report =
 
 if 'cover_url' not in st.session_state: st.session_state.cover_url = "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600&q=80"
 if 'active_template' not in st.session_state: st.session_state.active_template = None 
-if 'topic_ideas' not in st.session_state: st.session_state.topic_ideas = [] # 选题雷达数据
+if 'topic_ideas' not in st.session_state: st.session_state.topic_ideas = [] 
 if 'history_log' not in st.session_state: st.session_state.history_log = []
 
 # --- 4. 辅助函数 ---
@@ -190,7 +195,6 @@ def restore_history(idx):
     st.session_state.seo_score = score
     st.toast("✅ 已恢复")
 
-# 🔥 核心修复2：文档读取使用 ignore 模式，防止 ASCII 报错
 def extract_points_from_doc(doc_text):
     client = get_client()
     if not client: return []
@@ -211,107 +215,22 @@ def fetch_url_content(url):
         return response.text[:2000] if response.status_code == 200 else None
     except: return None
 
-# 🔥 恢复功能：选题雷达 (Brainstorm)
-def brainstorm_topics(niche, angle):
-    client = get_client()
-    if not client: return
-    
-    sys_p = f"你是一个小红书爆款选题策划。当前月份：{datetime.datetime.now().month}月。"
-    
-    if "热点" in angle: angle_p = "结合当季考试/假期热点。"
-    elif "蓝海" in angle: angle_p = "寻找竞争小但有需求的细分话题。"
-    else: angle_p = "直击用户最焦虑的痛点。"
-    
-    user_p = f"""
-    领域：{niche}
-    切角：{angle_p}
-    任务：策划 5 个极具吸引力的标题。
-    要求：每行一个标题，不要编号，不要引号，不要其他废话。
-    """
-    try:
-        resp = client.chat.completions.create(
-            model="deepseek-chat", messages=[{"role": "system", "content": sys_p}, {"role": "user", "content": user_p}], temperature=1.4
-        )
-        # 清洗数据
-        raw_text = resp.choices[0].message.content
-        ideas = [l.strip().lstrip("12345. -") for l in raw_text.split('\n') if l.strip()]
-        st.session_state.topic_ideas = ideas[:5]
-    except: st.error("选题生成失败，请检查Key")
-
-def analyze_text(text):
-    client = get_client()
-    if not client: return
-    try:
-        resp = client.chat.completions.create(
-            model="deepseek-chat", messages=[{"role": "system", "content": "拆解爆款逻辑。"}, {"role": "user", "content": f"分析：\n{text}"}], temperature=1.0
-        )
-        st.session_state.analysis_report = resp.choices[0].message.content
-    except: pass
-
-def refine_text(instruction):
-    client = get_client()
-    if not client or not st.session_state.generated_result: return
-    try:
-        resp = client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[{"role": "system", "content": "文案编辑。保留Markdown。"}, {"role": "user", "content": f"原代码:\n{st.session_state.generated_result}\n修改指令:\n{instruction}"}],
-            temperature=1.1
-        )
-        st.session_state.generated_result = resp.choices[0].message.content
-        st.rerun()
-    except: pass
-
-# --- 5. 侧边栏 ---
-with st.sidebar:
-    st.title("🔴 XHS Note AI")
-    st.caption("v33.1 稳定修复版")
-    
-    with st.expander("📖 新手操作指南", expanded=False):
-        st.markdown("1. **选题**：用Tab1找灵感\n2. **创作**：用Tab2生成文案\n3. **文档**：种草模式可传PDF/TXT\n4. **运营**：看右侧封面与评论")
-    
-    api_key = st.text_input("🔑 输入 Key", type="password")
-    
-    if st.session_state.history_log:
-        st.divider()
-        st.markdown("### 📂 历史草稿")
-        options = [f"{i+1}. {e['timestamp']} - {e['topic'][:6]}..." for i, e in enumerate(st.session_state.history_log)]
-        selected_hist = st.selectbox("选择记录", range(len(options)), format_func=lambda x: options[x])
-        if st.button("🔄 恢复此版本"): restore_history(selected_hist)
-
-    st.divider()
-    st.markdown("### 👱‍♀️ 博主身份")
-    user_status = st.radio("选择状态", ["✅ 已上岸/高分大神", "🏃‍♀️ 正在备考/小白"])
-    
-    st.divider()
-    st.markdown("### 🎭 人设风格")
-    style_map = {
-        "🎒 朴实学生党": {"desc": "无网感、不浮夸。语气平和实在。", "icon": "🎒"},
-        "🎓 雅思/考研学霸": {"desc": "权威、高分。语气冷静，常用“底层逻辑”。", "icon": "🎓"},
-        "🔥 逆袭特种兵": {"desc": "热血、鸡血。喜欢用感叹号！", "icon": "🔥"},
-        "🗣️ 纯正英音党": {"desc": "优雅、高级。强调“腔调”、“氛围感”。", "icon": "🗣️"},
-        "📝 极简笔记控": {"desc": "清爽、治愈。喜欢分点罗列。", "icon": "📝"},
-        "👯‍♀️ 留学/考研搭子": {"desc": "亲切、陪伴感。用“宝子们”。", "icon": "👯‍♀️"}
-    }
-    selected_style_name = st.selectbox("选择风格", list(style_map.keys()))
-    st.info(style_map[selected_style_name]['desc'])
-
-    word_count = st.slider("📏 预估篇幅", 100, 1000, 400, 50)
-
-    st.divider()
-    with st.expander("🚫 私有词库", expanded=False):
-        banned_words = st.text_area("🚫 禁用词", placeholder="首先 其次 总之")
-        required_words = st.text_area("✅ 必用词", placeholder="绝绝子 闭眼冲")
-
-# --- 6. 核心生成 ---
+# 🔥 核心生成函数 (修复了 NameError)
 def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_content, selected_points, vibe, length, status, vocab_dict, ref_template=None):
     client = get_client()
     if not client: 
         st.error("请先输入 API Key")
         return
     
+    # 1. 变量初始化 (防止 NameError)
     vocab_instruction = ""
     if vocab_dict['banned']: vocab_instruction += f"\n- 禁止使用：{vocab_dict['banned']}"
     if vocab_dict['required']: vocab_instruction += f"\n- 必须使用：{vocab_dict['required']}"
+    
+    status_instruction = ""
+    type_instruction = ""
+    tone_instruction = ""
+    ref_p = ""
 
     if mode == "write":
         base_prompt = f"""
@@ -320,6 +239,7 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
         任务：写一篇关于【{topic}】的笔记。
         """
         
+        # 身份指令
         if "正在备考" in status: status_instruction = "【视角：备考中】体现发现感，禁止说已上岸。"
         else: status_instruction = "【视角：已上岸】体现权威感，展示高分结果。"
 
@@ -329,17 +249,19 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
         elif doc_content: doc_hint = f"\n参考文档：{doc_content[:500]}"
 
         if "种草" in note_type:
-            if "竞品" in seeding_strategy: type_p = f"【模式：竞品测评】红黑榜对比。分析[{field1}]缺点，引出[{topic}]优势。{doc_hint}"
-            else: type_p = f"【模式：单品体验】痛点[{field1}] -> 体验变化[{field2}] -> 相见恨晚。{doc_hint}"
+            if "竞品" in seeding_strategy: type_instruction = f"【模式：竞品测评】红黑榜对比。分析[{field1}]缺点，引出[{topic}]优势。{doc_hint}"
+            else: type_instruction = f"【模式：单品体验】痛点[{field1}] -> 体验变化[{field2}] -> 相见恨晚。{doc_hint}"
         elif "教程" in note_type:
-            type_p = f"【模式：硬核教程】针对[{field1}]人群，分步骤讲解[{field2}]。干货说明书风格，调用知识库。{doc_hint}"
+            type_instruction = f"【模式：硬核教程】针对[{field1}]人群，分步骤讲解[{field2}]。干货说明书风格，调用知识库。{doc_hint}"
         else:
-            type_p = f"【模式：经验分享】背景[{field1}] -> 方法[{field2}] -> 真诚复盘。去功利化。"
+            type_instruction = f"【模式：经验分享】背景[{field1}] -> 方法[{field2}] -> 真诚复盘。去功利化。"
 
-        tone_p = "禁止流行语，语气平实。" if "朴实" in vibe else "多用'亲测/建议收藏'，有网感。"
-        ref_p = f"\n参考《{ref_template['name']}》的叙事结构。" if ref_template else ""
+        if "朴实" in vibe: tone_instruction = "禁止流行语，语气平实。"
+        else: tone_instruction = "多用'亲测/建议收藏'，有网感。"
+        
+        if ref_template: ref_p = f"\n参考《{ref_template['name']}》的叙事结构。"
 
-        base_prompt += f"{status_p} {type_p} {ref_p}\n【要求】：分段(<3行)，多用空行。{tone_p} {vocab_instruction}\n输出格式：### [标题]\n[正文]\n#标签"
+        base_prompt += f"{status_instruction} {type_instruction} {ref_p}\n【要求】：分段(<3行)，多用空行。{tone_instruction} {vocab_instruction}\n输出格式：### [标题]\n[正文]\n#标签"
         sys_p = base_prompt; user_p = f"主题：{topic}"
     else:
         sys_p = f"仿写大师。{vocab_instruction}"; user_p = f"参考：\n{field1}\n\n新主题：{topic}"
@@ -390,6 +312,86 @@ def generate_all(mode, note_type, seeding_strategy, topic, field1, field2, doc_c
         
     except Exception as e: st.error(f"Error: {e}")
 
+# ... (Brainstorm, Analyze, Refine) ...
+def brainstorm_topics(niche, angle):
+    client = get_client()
+    if not client: return
+    sys_p = f"选题策划。当前{datetime.datetime.now().month}月。"
+    if angle == "🔥 蹭热点/时效性": angle_p = "结合考试季/假期。"
+    elif angle == "💡 冷门蓝海/差异化": angle_p = "反直觉观点。"
+    else: angle_p = "直击焦虑痛点。"
+    user_p = f"领域：{niche}。切角：{angle_p}。5个爆款标题。"
+    try:
+        resp = client.chat.completions.create(
+            model="deepseek-chat", messages=[{"role": "system", "content": sys_p}, {"role": "user", "content": user_p}], temperature=1.4
+        )
+        st.session_state.topic_ideas = [l.strip() for l in resp.choices[0].message.content.split('\n') if l.strip()][:5]
+    except: pass
+
+def analyze_text(text):
+    client = get_client()
+    if not client: return
+    try:
+        resp = client.chat.completions.create(
+            model="deepseek-chat", messages=[{"role": "system", "content": "拆解爆款逻辑。"}, {"role": "user", "content": f"分析：\n{text}"}], temperature=1.0
+        )
+        st.session_state.analysis_report = resp.choices[0].message.content
+    except: pass
+
+def refine_text(instruction):
+    client = get_client()
+    if not client or not st.session_state.generated_result: return
+    try:
+        resp = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[{"role": "system", "content": "文案编辑。保留Markdown。"}, {"role": "user", "content": f"原代码:\n{st.session_state.generated_result}\n修改指令:\n{instruction}"}],
+            temperature=1.1
+        )
+        st.session_state.generated_result = resp.choices[0].message.content
+        st.rerun()
+    except: pass
+
+# --- 5. 侧边栏 ---
+with st.sidebar:
+    st.title("🔴 XHS Note AI")
+    st.caption("v33.2 稳定修复版")
+    
+    with st.expander("📖 新手操作指南", expanded=False):
+        st.markdown("1. **选题**：用Tab1找灵感\n2. **创作**：用Tab2生成文案\n3. **文档**：种草模式可传PDF/TXT\n4. **运营**：看右侧封面与评论")
+    
+    api_key = st.text_input("🔑 输入 Key", type="password")
+    
+    if st.session_state.history_log:
+        st.divider()
+        st.markdown("### 📂 历史草稿")
+        options = [f"{i+1}. {e['timestamp']} - {e['topic'][:6]}..." for i, e in enumerate(st.session_state.history_log)]
+        selected_hist = st.selectbox("选择记录", range(len(options)), format_func=lambda x: options[x])
+        if st.button("🔄 恢复此版本"): restore_history(selected_hist)
+
+    st.divider()
+    st.markdown("### 👱‍♀️ 博主身份")
+    user_status = st.radio("选择状态", ["✅ 已上岸/高分大神", "🏃‍♀️ 正在备考/小白"])
+    
+    st.divider()
+    st.markdown("### 🎭 人设风格")
+    style_map = {
+        "🎒 朴实学生党": {"desc": "无网感、不浮夸。语气平和实在。", "icon": "🎒"},
+        "🎓 雅思/考研学霸": {"desc": "权威、高分。语气冷静，常用“底层逻辑”。", "icon": "🎓"},
+        "🔥 逆袭特种兵": {"desc": "热血、鸡血。喜欢用感叹号！", "icon": "🔥"},
+        "🗣️ 纯正英音党": {"desc": "优雅、高级。强调“腔调”、“氛围感”。", "icon": "🗣️"},
+        "📝 极简笔记控": {"desc": "清爽、治愈。喜欢分点罗列。", "icon": "📝"},
+        "👯‍♀️ 留学/考研搭子": {"desc": "亲切、陪伴感。用“宝子们”。", "icon": "👯‍♀️"}
+    }
+    selected_style_name = st.selectbox("选择风格", list(style_map.keys()))
+    st.info(style_map[selected_style_name]['desc'])
+
+    word_count = st.slider("📏 预估篇幅", 100, 1000, 400, 50)
+
+    st.divider()
+    with st.expander("🚫 私有词库", expanded=False):
+        banned_words = st.text_area("🚫 禁用词", placeholder="首先 其次 总之")
+        required_words = st.text_area("✅ 必用词", placeholder="绝绝子 闭眼冲")
+
 # --- 7. 主界面布局 ---
 col_left, col_right = st.columns([1.1, 1], gap="large")
 
@@ -397,7 +399,6 @@ col_left, col_right = st.columns([1.1, 1], gap="large")
 with col_left:
     st.subheader("✍️ 创作中心")
     
-    # 🔥 找回了 Tab 1 选题雷达
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["💡 选题", "✨ 创作", "📚 逻辑", "🦜 仿写", "🔍 拆解"])
     
     with tab1:
@@ -413,6 +414,7 @@ with col_left:
             if st.button("🔄 换一批", use_container_width=True): brainstorm_topics(niche_input, angle_input)
             
         if st.session_state.topic_ideas:
+            st.divider()
             for idea in st.session_state.topic_ideas:
                 if st.button(f"📌 {idea}", use_container_width=True): use_idea(idea)
 
@@ -439,13 +441,12 @@ with col_left:
             st.divider()
             topic = st.text_input("📌 笔记主题", value=st.session_state.input_topic, placeholder="例：百词斩APP怎么用")
             
-            # 文档上传
+            # 文档上传 & 智能选点
             doc_content = ""
             selected_points = []
             if note_type in ["种草/安利", "科普/教程"]:
                 uploaded_file = st.file_uploader("📂 上传产品文档 (TXT/MD)", type=['txt', 'md'])
                 if uploaded_file:
-                    # 🔥 修复：安全读取文件
                     doc_content = uploaded_file.getvalue().decode("utf-8", errors='ignore')
                     if doc_content != st.session_state.uploaded_doc_content:
                         st.session_state.uploaded_doc_content = doc_content
@@ -482,7 +483,6 @@ with col_left:
                         generate_all("write", note_type, seeding_strategy, topic, field1, field2, doc_content, selected_points, selected_style_name, word_count, user_status, vocab, st.session_state.active_template)
 
     with tab3:
-        # 逻辑库 (精简代码，逻辑不变)
         with st.expander("📖 备考/上岸", expanded=True):
             cols = st.columns(3)
             if cols[0].button("🚀 冲刺逆袭"): set_template_as_reference("四六级逆袭", "四六级最后30天", "单词背不完", "三色刷题法")
